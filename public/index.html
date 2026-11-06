@@ -2,54 +2,63 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#14532d">
   <title>Kamus Isyarat Online</title>
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body>
+<body class="home-page">
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-icon" aria-hidden="true">🤟</div>
+        <span class="brand-icon" aria-hidden="true">🤟</span>
+        <label class="sr-only" for="dictionarySelect">Pilih kamus</label>
         <select id="dictionarySelect" class="dictionary-select" aria-label="Pilih kamus">
-          <option value="">Memuat kamus...</option>
+          <option value="">Memuat daftar kamus...</option>
         </select>
       </div>
       <a class="admin-link" href="/admin.html">Admin</a>
     </header>
 
     <main class="container">
-      <section class="search-panel">
-        <label for="searchInput">Cari kata (maksimal 5 kata)</label>
-        <div class="search-row">
-          <input id="searchInput" type="search"
-            placeholder="Contoh: MAKAN, MINUM, TERIMA KASIH"
-            autocomplete="off">
-          <button id="clearSearch" class="clear-button" type="button" aria-label="Hapus pencarian">×</button>
-        </div>
-        <div id="resultInfo" class="result-info">Memuat kamus...</div>
+      <section class="search-panel" aria-label="Pencarian kata">
+        <label class="sr-only" for="searchInput">Cari maksimal lima kata</label>
+        <input id="searchInput" type="search"
+          placeholder="Cari kata (maksimal 5 kata)..."
+          autocomplete="off" maxlength="100">
+        <button id="clearSearch" class="clear-button" type="button" aria-label="Hapus pencarian">×</button>
       </section>
 
-      <section class="word-panel" aria-label="Daftar kata">
-        <div id="wordList" class="word-list">
+      <section class="word-section" aria-label="Daftar kata">
+        <div class="section-heading">
+          <h2>Daftar Kata</h2>
+          <span id="resultInfo" class="result-info">Memuat kamus...</span>
+        </div>
+        <div id="wordList" class="word-list" tabindex="0">
           <div class="empty-state">Memuat data kamus...</div>
         </div>
       </section>
 
-      <section id="detailPanel" class="detail-panel" aria-live="polite">
-        <div class="detail-top">
-          <div class="definition-box">
-            <h2 id="selectedWord">Pilih kata</h2>
-            <p id="selectedDefinition">Pilih salah satu kata pada daftar untuk melihat definisi, gambar, dan video isyarat.</p>
-          </div>
-          <div class="image-box" id="imageBox">
-            <div class="media-placeholder">Gambar isyarat</div>
-          </div>
+      <section class="detail-area" aria-label="Materi kata terpilih">
+        <div class="detail-grid">
+          <article class="detail-cell definition-cell">
+            <h2>Keterangan</h2>
+            <p id="wordDefinition" class="definition-text">Pilih kata untuk melihat keterangannya.</p>
+          </article>
+          <article class="detail-cell image-cell">
+            <h2>Gambar</h2>
+            <div class="image-wrap" id="imageWrap">
+              <span class="media-placeholder">Gambar kata yang dipilih</span>
+            </div>
+          </article>
         </div>
-        <div class="video-box" id="videoBox">
-          <div class="media-placeholder">Video isyarat</div>
-        </div>
+
+        <article class="video-section">
+          <h2>Video Isyarat</h2>
+          <div class="video-wrap" id="videoWrap">
+            <span class="media-placeholder">Video kata yang dipilih</span>
+          </div>
+        </article>
       </section>
     </main>
   </div>
