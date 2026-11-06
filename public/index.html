@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14532d">
+  <title>Kamus Isyarat Online</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-icon">🤟</div>
+      <div>
+        <h1>Kamus Isyarat</h1>
+        <p>Kamus Bahasa Isyarat Online</p>
+      </div>
+    </div>
+    <a class="admin-link" href="/admin.html">Admin</a>
+  </header>
+
+  <main class="container">
+    <section class="intro">
+      <h2>Belajar Bahasa Isyarat</h2>
+      <p>Cari kata untuk melihat arti, gambar, dan video isyarat.</p>
+    </section>
+
+    <section class="search-panel">
+      <label for="dictionarySelect">Pilih kamus</label>
+      <select id="dictionarySelect">
+        <option value="">Memuat daftar kamus...</option>
+      </select>
+
+      <label for="searchInput">Cari kata</label>
+      <input id="searchInput" type="search"
+        placeholder="Contoh: MAKAN, MINUM, TERIMA KASIH"
+        autocomplete="off">
+
+      <div id="resultInfo" class="result-info">Memuat kamus...</div>
+    </section>
+
+    <section id="wordList" class="word-list">
+      <div class="empty-state">Memuat data kamus...</div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Kamus Isyarat Online</p>
+  </footer>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
