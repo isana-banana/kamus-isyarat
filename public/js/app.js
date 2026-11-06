@@ -3,13 +3,12 @@ const searchInput = document.getElementById("searchInput");
 const clearSearch = document.getElementById("clearSearch");
 const wordList = document.getElementById("wordList");
 const resultInfo = document.getElementById("resultInfo");
-const selectedWord = document.getElementById("selectedWord");
-const selectedDefinition = document.getElementById("selectedDefinition");
-const imageBox = document.getElementById("imageBox");
-const videoBox = document.getElementById("videoBox");
+const wordDefinition = document.getElementById("wordDefinition");
+const imageWrap = document.getElementById("imageWrap");
+const videoWrap = document.getElementById("videoWrap");
 
 let currentWords = [];
-let selectedKey = null;
+let selectedWord = null;
 
 async function api(url) {
   const response = await fetch(url);
@@ -18,116 +17,122 @@ async function api(url) {
   return data;
 }
 
-function driveImageUrl(fileId) {
-  return "https://drive.google.com/thumbnail?id=" +
-    encodeURIComponent(fileId) + "&sz=w1000";
+// Menerima ID file maupun link berbagi Google Drive.
+function driveFileId(value) {
+  const input = String(value || "").trim();
+  if (!input) return "";
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(input)) return input;
+
+  try {
+    const url = new URL(input);
+    const byPath = url.pathname.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (byPath) return byPath[1];
+    const byQuery = url.searchParams.get("id");
+    if (byQuery) return byQuery;
+  } catch {}
+  return input;
 }
 
-function drivePreviewUrl(fileId) {
-  return "https://drive.google.com/file/d/" +
-    encodeURIComponent(fileId) + "/preview";
+function driveImageUrl(value) {
+  const id = driveFileId(value);
+  return id ? "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w1200" : "";
+}
+
+// Video dialirkan melalui Cloudflare Worker, bukan Google Drive Preview.
+function driveVideoUrl(value) {
+  const id = driveFileId(value);
+  return id ? "/api/media/" + encodeURIComponent(id) : "";
 }
 
 function safeText(value) {
   return String(value ?? "");
 }
 
-function getFilteredWords() {
-  const tokens = searchInput.value
-    .trim()
-    .toLocaleLowerCase("id")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 5);
-
-  if (!tokens.length) return currentWords;
-
-  return currentWords.filter(([word, item]) => {
-    const searchable = (word + " " + safeText(item.definisi))
-      .toLocaleLowerCase("id");
-    return tokens.every(token => searchable.includes(token));
-  });
+function showPlaceholder(container, message) {
+  container.replaceChildren();
+  const placeholder = document.createElement("span");
+  placeholder.className = "media-placeholder";
+  placeholder.textContent = message;
+  container.appendChild(placeholder);
 }
 
-function showSelectedWord(key, item) {
-  selectedKey = key;
-  selectedWord.textContent = key;
-  selectedDefinition.textContent = safeText(item.definisi);
+function showSelectedWord(word, item) {
+  selectedWord = word;
+  wordDefinition.textContent = safeText(item.definisi) || "Belum ada keterangan.";
 
-  imageBox.replaceChildren();
-  videoBox.replaceChildren();
-
+  imageWrap.replaceChildren();
   if (item.gambar) {
     const image = document.createElement("img");
     image.className = "word-image";
     image.src = driveImageUrl(item.gambar);
-    image.alt = "Gambar isyarat " + key;
-    image.loading = "lazy";
-    image.onerror = () => {
-      imageBox.textContent = "Gambar tidak dapat ditampilkan. Periksa ID dan izin Google Drive.";
-    };
-    imageBox.appendChild(image);
+    image.alt = "Gambar isyarat " + word;
+    image.onerror = () => showPlaceholder(imageWrap, "Gambar tidak dapat ditampilkan. Periksa ID dan izin Google Drive.");
+    imageWrap.appendChild(image);
   } else {
-    imageBox.innerHTML = '<div class="media-placeholder">Gambar belum tersedia</div>';
+    showPlaceholder(imageWrap, "Belum ada gambar untuk kata ini.");
   }
 
+  videoWrap.replaceChildren();
   if (item.video) {
-    const frame = document.createElement("iframe");
-    frame.className = "video-frame";
-    frame.src = drivePreviewUrl(item.video);
-    frame.title = "Video isyarat " + key;
-    frame.allow = "autoplay; encrypted-media; picture-in-picture";
-    frame.allowFullscreen = true;
-    frame.loading = "lazy";
-    videoBox.appendChild(frame);
-
-    const link = document.createElement("a");
-    link.className = "video-link";
-    link.href = drivePreviewUrl(item.video);
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.textContent = "Buka video";
-    videoBox.appendChild(link);
+    const video = document.createElement("video");
+    video.className = "word-video";
+    video.controls = true;
+    video.preload = "metadata";
+    video.playsInline = true;
+    video.setAttribute("controlsList", "nodownload");
+    video.src = driveVideoUrl(item.video);
+    video.onerror = () => showPlaceholder(videoWrap, "Video gagal dimuat. Periksa ID, izin Drive, dan format MP4 (H.264/AAC).");
+    videoWrap.appendChild(video);
   } else {
-    videoBox.innerHTML = '<div class="media-placeholder">Video belum tersedia</div>';
+    showPlaceholder(videoWrap, "Belum ada video untuk kata ini.");
   }
 
-  renderWordList();
+  for (const button of wordList.querySelectorAll(".word-button")) {
+    const active = button.dataset.word === word;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  }
 }
 
-function renderWordList() {
-  const filtered = getFilteredWords();
-  resultInfo.textContent = filtered.length +
-    " kata ditemukan dari " + currentWords.length + " kata.";
+function getFilteredWords() {
+  const query = searchInput.value.trim().toLocaleLowerCase("id");
+  const terms = query.split(/\s+/).filter(Boolean).slice(0, 5);
+  return currentWords.filter(([word, item]) => {
+    const normalizedWord = word.toLocaleLowerCase("id");
+    const definition = safeText(item.definisi).toLocaleLowerCase("id");
+    if (!terms.length) return true;
+    return terms.some(term => normalizedWord.includes(term) || definition.includes(term));
+  });
+}
 
+function renderWords() {
+  const filtered = getFilteredWords();
+  resultInfo.textContent = filtered.length + " dari " + currentWords.length + " kata";
   wordList.replaceChildren();
 
   if (!filtered.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "Kata tidak ditemukan.";
-    wordList.appendChild(empty);
-    selectedKey = null;
-    selectedWord.textContent = "Kata tidak ditemukan";
-    selectedDefinition.textContent = "Coba kata pencarian yang lain.";
-    imageBox.innerHTML = '<div class="media-placeholder">Gambar isyarat</div>';
-    videoBox.innerHTML = '<div class="media-placeholder">Video isyarat</div>';
+    showPlaceholder(wordList, "Kata tidak ditemukan.");
+    wordDefinition.textContent = "Tidak ada kata yang cocok dengan pencarian.";
+    showPlaceholder(imageWrap, "Tidak ada gambar.");
+    showPlaceholder(videoWrap, "Tidak ada video.");
+    selectedWord = null;
     return;
   }
 
   for (const [word, item] of filtered) {
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "word-item" + (word === selectedKey ? " active" : "");
+    button.className = "word-button";
     button.textContent = word;
-    button.setAttribute("aria-pressed", word === selectedKey ? "true" : "false");
+    button.dataset.word = word;
+    button.setAttribute("aria-pressed", "false");
     button.addEventListener("click", () => showSelectedWord(word, item));
     wordList.appendChild(button);
   }
 
-  if (!filtered.some(([word]) => word === selectedKey)) {
-    showSelectedWord(filtered[0][0], filtered[0][1]);
-  }
+  const stillVisible = filtered.find(([word]) => word === selectedWord);
+  const next = stillVisible || filtered[0];
+  showSelectedWord(next[0], next[1]);
 }
 
 async function loadCatalog() {
@@ -140,8 +145,8 @@ async function loadCatalog() {
       option.value = "";
       option.textContent = "Belum ada kamus";
       dictionarySelect.appendChild(option);
-      wordList.textContent = "Belum ada kamus yang ditambahkan admin.";
       resultInfo.textContent = "";
+      showPlaceholder(wordList, "Belum ada kamus yang ditambahkan admin.");
       return;
     }
 
@@ -151,52 +156,36 @@ async function loadCatalog() {
       option.textContent = item.name;
       dictionarySelect.appendChild(option);
     }
-
     await loadDictionary(dictionarySelect.value);
   } catch (error) {
-    wordList.textContent = error.message;
+    showPlaceholder(wordList, error.message);
     resultInfo.textContent = "Gagal memuat daftar kamus.";
   }
 }
 
 async function loadDictionary(id) {
   if (!id) return;
-
-  wordList.textContent = "Memuat isi kamus...";
-  resultInfo.textContent = "";
-  currentWords = [];
-  selectedKey = null;
-
+  resultInfo.textContent = "Memuat...";
+  showPlaceholder(wordList, "Memuat isi kamus...");
   try {
     const data = await api("/api/dictionary/" + encodeURIComponent(id));
-    const manifest = data.manifest;
-
-    currentWords = Object.entries(manifest.kata || {})
-      .sort((a, b) => a[0].localeCompare(b[0], "id"));
-
+    const manifest = data.manifest || {};
+    currentWords = Object.entries(manifest.kata || {}).sort((a, b) => a[0].localeCompare(b[0], "id"));
+    selectedWord = null;
     searchInput.value = "";
-
-    if (currentWords.length) {
-      showSelectedWord(currentWords[0][0], currentWords[0][1]);
-    } else {
-      renderWordList();
-    }
+    renderWords();
   } catch (error) {
     currentWords = [];
-    wordList.textContent = error.message;
+    showPlaceholder(wordList, error.message);
     resultInfo.textContent = "Kamus gagal dimuat.";
   }
 }
 
-dictionarySelect.addEventListener("change", () => {
-  loadDictionary(dictionarySelect.value);
-});
-
-searchInput.addEventListener("input", renderWordList);
-
+dictionarySelect.addEventListener("change", () => loadDictionary(dictionarySelect.value));
+searchInput.addEventListener("input", renderWords);
 clearSearch.addEventListener("click", () => {
   searchInput.value = "";
-  renderWordList();
+  renderWords();
   searchInput.focus();
 });
 
