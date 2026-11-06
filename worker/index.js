@@ -112,7 +112,7 @@ function extractFolderId(value) {
   return null;
 }
 
-async function driveRequest(env, path) {
+async function driveFetch(env, path, requestHeaders = {}) {
   if (!env.GOOGLE_API_KEY) {
     throw new Error("GOOGLE_API_KEY belum dipasang di Cloudflare.");
   }
@@ -121,14 +121,60 @@ async function driveRequest(env, path) {
   const url = "https://www.googleapis.com/drive/v3/" +
     path + separator + "key=" + encodeURIComponent(env.GOOGLE_API_KEY);
 
-  const response = await fetch(url);
+  return await fetch(url, { headers: requestHeaders });
+}
 
+async function driveRequest(env, path) {
+  const response = await driveFetch(env, path);
   if (!response.ok) {
     const detail = await response.text();
     throw new Error("Google Drive API gagal (" + response.status + "): " + detail.slice(0, 250));
   }
-
   return response;
+}
+
+// Mengalirkan file media dari Drive melalui Worker agar video dapat diputar
+// memakai elemen HTML5 <video>, termasuk permintaan byte-range untuk seek.
+async function handleMedia(request, env, fileId) {
+  if (!/^[a-zA-Z0-9_-]{10,}$/.test(fileId)) {
+    return json({ error: "ID file Google Drive tidak valid." }, 400);
+  }
+
+  const requestHeaders = {};
+  const range = request.headers.get("Range");
+  if (range) requestHeaders.Range = range;
+
+  const upstream = await driveFetch(
+    env,
+    "files/" + encodeURIComponent(fileId) + "?alt=media",
+    requestHeaders
+  );
+
+  if (!upstream.ok && upstream.status !== 416) {
+    const detail = await upstream.text();
+    return json({
+      error: "Google Drive tidak dapat mengirim media. Periksa izin berbagi dan ID file.",
+      detail: detail.slice(0, 300)
+    }, upstream.status);
+  }
+
+  const headers = new Headers();
+  for (const name of [
+    "Content-Type", "Content-Length", "Content-Range",
+    "Accept-Ranges", "Last-Modified", "ETag"
+  ]) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "video/mp4");
+  if (!headers.has("Accept-Ranges")) headers.set("Accept-Ranges", "bytes");
+  headers.set("Cache-Control", "public, max-age=3600");
+  headers.set("X-Content-Type-Options", "nosniff");
+
+  return new Response(request.method === "HEAD" ? null : upstream.body, {
+    status: upstream.status,
+    headers
+  });
 }
 
 async function getManifest(env, folderId) {
@@ -170,6 +216,11 @@ async function handleApi(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+
+  const mediaMatch = path.match(/^\/api\/media\/([^/]+)$/);
+  if (mediaMatch && (method === "GET" || method === "HEAD")) {
+    return await handleMedia(request, env, decodeURIComponent(mediaMatch[1]));
+  }
 
   if (path === "/api/catalog" && method === "GET") {
     const catalog = await readCatalog(env);
