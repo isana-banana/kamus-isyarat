@@ -9,4 +9,4 @@ run_worker_first = ["/api/*"]
 
 [[kv_namespaces]]
 binding = "KAMUS_KV"
-id = "NANTI_DIISI_ID_KV"
+id = "6ca737ffe08b49b28af08ce8d1825ee2"
