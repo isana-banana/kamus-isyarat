@@ -8,45 +8,51 @@
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-icon">🤟</div>
-      <div>
-        <h1>Kamus Isyarat</h1>
-        <p>Kamus Bahasa Isyarat Online</p>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">🤟</div>
+        <select id="dictionarySelect" class="dictionary-select" aria-label="Pilih kamus">
+          <option value="">Memuat kamus...</option>
+        </select>
       </div>
-    </div>
-    <a class="admin-link" href="/admin.html">Admin</a>
-  </header>
+      <a class="admin-link" href="/admin.html">Admin</a>
+    </header>
 
-  <main class="container">
-    <section class="intro">
-      <h2>Belajar Bahasa Isyarat</h2>
-      <p>Cari kata untuk melihat arti, gambar, dan video isyarat.</p>
-    </section>
+    <main class="container">
+      <section class="search-panel">
+        <label for="searchInput">Cari kata (maksimal 5 kata)</label>
+        <div class="search-row">
+          <input id="searchInput" type="search"
+            placeholder="Contoh: MAKAN, MINUM, TERIMA KASIH"
+            autocomplete="off">
+          <button id="clearSearch" class="clear-button" type="button" aria-label="Hapus pencarian">×</button>
+        </div>
+        <div id="resultInfo" class="result-info">Memuat kamus...</div>
+      </section>
 
-    <section class="search-panel">
-      <label for="dictionarySelect">Pilih kamus</label>
-      <select id="dictionarySelect">
-        <option value="">Memuat daftar kamus...</option>
-      </select>
+      <section class="word-panel" aria-label="Daftar kata">
+        <div id="wordList" class="word-list">
+          <div class="empty-state">Memuat data kamus...</div>
+        </div>
+      </section>
 
-      <label for="searchInput">Cari kata</label>
-      <input id="searchInput" type="search"
-        placeholder="Contoh: MAKAN, MINUM, TERIMA KASIH"
-        autocomplete="off">
-
-      <div id="resultInfo" class="result-info">Memuat kamus...</div>
-    </section>
-
-    <section id="wordList" class="word-list">
-      <div class="empty-state">Memuat data kamus...</div>
-    </section>
-  </main>
-
-  <footer>
-    <p>Kamus Isyarat Online</p>
-  </footer>
+      <section id="detailPanel" class="detail-panel" aria-live="polite">
+        <div class="detail-top">
+          <div class="definition-box">
+            <h2 id="selectedWord">Pilih kata</h2>
+            <p id="selectedDefinition">Pilih salah satu kata pada daftar untuk melihat definisi, gambar, dan video isyarat.</p>
+          </div>
+          <div class="image-box" id="imageBox">
+            <div class="media-placeholder">Gambar isyarat</div>
+          </div>
+        </div>
+        <div class="video-box" id="videoBox">
+          <div class="media-placeholder">Video isyarat</div>
+        </div>
+      </section>
+    </main>
+  </div>
 
   <script src="/js/app.js"></script>
 </body>
