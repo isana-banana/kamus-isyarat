@@ -9,6 +9,7 @@ const videoWrap = document.getElementById("videoWrap");
 
 let currentWords = [];
 let selectedWord = null;
+let currentDictionaryId = "";
 
 async function api(url) {
   const response = await fetch(url);
@@ -17,31 +18,19 @@ async function api(url) {
   return data;
 }
 
-// Menerima ID file maupun link berbagi Google Drive.
-function driveFileId(value) {
-  const input = String(value || "").trim();
-  if (!input) return "";
-  if (/^[a-zA-Z0-9_-]{10,}$/.test(input)) return input;
+// Mendukung dua format: nama file (format baru) dan ID file (format lama).
+function driveMediaUrl(value) {
+  const reference = String(value || "").trim();
+  if (!reference) return "";
 
-  try {
-    const url = new URL(input);
-    const byPath = url.pathname.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-    if (byPath) return byPath[1];
-    const byQuery = url.searchParams.get("id");
-    if (byQuery) return byQuery;
-  } catch {}
-  return input;
-}
+  // Kompatibilitas dengan kamus lama yang masih menyimpan ID Google Drive.
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(reference)) {
+    return "/api/media/" + encodeURIComponent(reference);
+  }
 
-function driveImageUrl(value) {
-  const id = driveFileId(value);
-  return id ? "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w1200" : "";
-}
-
-// Video dialirkan melalui Cloudflare Worker, bukan Google Drive Preview.
-function driveVideoUrl(value) {
-  const id = driveFileId(value);
-  return id ? "/api/media/" + encodeURIComponent(id) : "";
+  // Format baru: Worker mencari nama file di folder kamus yang sedang dibuka.
+  return "/api/media/by-name/" + encodeURIComponent(currentDictionaryId) +
+    "/" + encodeURIComponent(reference);
 }
 
 function safeText(value) {
@@ -64,9 +53,11 @@ function showSelectedWord(word, item) {
   if (item.gambar) {
     const image = document.createElement("img");
     image.className = "word-image";
-    image.src = driveImageUrl(item.gambar);
+    image.src = driveMediaUrl(item.gambar);
     image.alt = "Gambar isyarat " + word;
-    image.onerror = () => showPlaceholder(imageWrap, "Gambar tidak dapat ditampilkan. Periksa ID dan izin Google Drive.");
+    image.loading = "lazy";
+    image.onerror = () => showPlaceholder(imageWrap,
+      "Gambar tidak dapat ditampilkan. Periksa nama file dan izin Google Drive.");
     imageWrap.appendChild(image);
   } else {
     showPlaceholder(imageWrap, "Belum ada gambar untuk kata ini.");
@@ -80,8 +71,9 @@ function showSelectedWord(word, item) {
     video.preload = "metadata";
     video.playsInline = true;
     video.setAttribute("controlsList", "nodownload");
-    video.src = driveVideoUrl(item.video);
-    video.onerror = () => showPlaceholder(videoWrap, "Video gagal dimuat. Periksa ID, izin Drive, dan format MP4 (H.264/AAC).");
+    video.src = driveMediaUrl(item.video);
+    video.onerror = () => showPlaceholder(videoWrap,
+      "Video gagal dimuat. Periksa nama file, izin Drive, dan format MP4 (H.264/AAC).");
     videoWrap.appendChild(video);
   } else {
     showPlaceholder(videoWrap, "Belum ada video untuk kata ini.");
@@ -165,6 +157,7 @@ async function loadCatalog() {
 
 async function loadDictionary(id) {
   if (!id) return;
+  currentDictionaryId = id;
   resultInfo.textContent = "Memuat...";
   showPlaceholder(wordList, "Memuat isi kamus...");
   try {
