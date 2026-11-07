@@ -133,13 +133,9 @@ async function driveRequest(env, path) {
   return response;
 }
 
-// Mengalirkan file media dari Drive melalui Worker agar video dapat diputar
-// memakai elemen HTML5 <video>, termasuk permintaan byte-range untuk seek.
-async function handleMedia(request, env, fileId) {
-  if (!/^[a-zA-Z0-9_-]{10,}$/.test(fileId)) {
-    return json({ error: "ID file Google Drive tidak valid." }, 400);
-  }
-
+// Mengalirkan file media dari Drive melalui Worker agar gambar dan video
+// dapat ditampilkan langsung di browser. Header Range diteruskan untuk seek video.
+async function streamDriveFile(request, env, fileId, mimeTypeHint = "") {
   const requestHeaders = {};
   const range = request.headers.get("Range");
   if (range) requestHeaders.Range = range;
@@ -153,7 +149,7 @@ async function handleMedia(request, env, fileId) {
   if (!upstream.ok && upstream.status !== 416) {
     const detail = await upstream.text();
     return json({
-      error: "Google Drive tidak dapat mengirim media. Periksa izin berbagi dan ID file.",
+      error: "Google Drive tidak dapat mengirim media. Periksa izin berbagi dan file.",
       detail: detail.slice(0, 300)
     }, upstream.status);
   }
@@ -166,7 +162,9 @@ async function handleMedia(request, env, fileId) {
     const value = upstream.headers.get(name);
     if (value) headers.set(name, value);
   }
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "video/mp4");
+  if (!headers.has("Content-Type")) {
+    headers.set("Content-Type", mimeTypeHint || "application/octet-stream");
+  }
   if (!headers.has("Accept-Ranges")) headers.set("Accept-Ranges", "bytes");
   headers.set("Cache-Control", "public, max-age=3600");
   headers.set("X-Content-Type-Options", "nosniff");
@@ -175,6 +173,57 @@ async function handleMedia(request, env, fileId) {
     status: upstream.status,
     headers
   });
+}
+
+// Format lama tetap didukung: /api/media/ID_FILE
+async function handleMediaById(request, env, fileId) {
+  if (!/^[a-zA-Z0-9_-]{10,}$/.test(fileId)) {
+    return json({ error: "ID file Google Drive tidak valid." }, 400);
+  }
+  return await streamDriveFile(request, env, fileId);
+}
+
+function escapeDriveQuery(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+// Format baru: cari file berdasarkan nama tepat di folder kamus terdaftar.
+async function handleMediaByName(request, env, dictionaryId, fileName) {
+  if (!dictionaryId || !fileName || fileName.includes("/") || fileName.includes("\\") ||
+      fileName === "." || fileName === "..") {
+    return json({ error: "Nama file media tidak valid." }, 400);
+  }
+
+  const catalog = await readCatalog(env);
+  const dictionary = catalog.items.find(item =>
+    item.id === dictionaryId && item.active !== false
+  );
+  if (!dictionary) {
+    return json({ error: "Kamus tidak ditemukan atau tidak aktif." }, 404);
+  }
+
+  const safeName = escapeDriveQuery(fileName);
+  const query = "'" + dictionary.folderId + "' in parents and name = '" +
+    safeName + "' and trashed = false";
+  const listUrl = "files?q=" + encodeURIComponent(query) +
+    "&fields=files(id,name,mimeType,size)&pageSize=100";
+  const listResponse = await driveRequest(env, listUrl);
+  const listData = await listResponse.json();
+  const matches = (listData.files || []).filter(file => file.name === fileName);
+
+  if (matches.length === 0) {
+    return json({ error: "File '" + fileName + "' tidak ditemukan di folder kamus." }, 404);
+  }
+  if (matches.length > 1) {
+    return json({ error: "Ada lebih dari satu file bernama '" + fileName + "' di folder kamus. Gunakan nama yang unik." }, 409);
+  }
+
+  const file = matches[0];
+  const mimeType = file.mimeType || "application/octet-stream";
+  if (!mimeType.startsWith("image/") && !mimeType.startsWith("video/")) {
+    return json({ error: "File '" + fileName + "' bukan file gambar atau video." }, 415);
+  }
+  return await streamDriveFile(request, env, file.id, mimeType);
 }
 
 async function getManifest(env, folderId) {
@@ -217,9 +266,21 @@ async function handleApi(request, env) {
   const path = url.pathname;
   const method = request.method;
 
-  const mediaMatch = path.match(/^\/api\/media\/([^/]+)$/);
-  if (mediaMatch && (method === "GET" || method === "HEAD")) {
-    return await handleMedia(request, env, decodeURIComponent(mediaMatch[1]));
+  if (method === "GET" || method === "HEAD") {
+    const namedMediaMatch = path.match(/^\/api\/media\/by-name\/([^/]+)\/(.+)$/);
+    if (namedMediaMatch) {
+      return await handleMediaByName(
+        request,
+        env,
+        decodeURIComponent(namedMediaMatch[1]),
+        decodeURIComponent(namedMediaMatch[2])
+      );
+    }
+
+    const mediaMatch = path.match(/^\/api\/media\/([^/]+)$/);
+    if (mediaMatch) {
+      return await handleMediaById(request, env, decodeURIComponent(mediaMatch[1]));
+    }
   }
 
   if (path === "/api/catalog" && method === "GET") {
