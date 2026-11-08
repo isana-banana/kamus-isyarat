@@ -161,7 +161,7 @@ button, input, select { font: inherit; }
   color: #17251c;
   font-size: 15px;
 }
-.definition-text { margin: 0; overflow-y: auto; font-size: 14px; line-height: 1.4; }
+.definition-text { margin: 0; overflow-y: auto; font-size: 20px; line-height: 1.4; }
 .image-wrap, .video-wrap {
   width: 100%;
   height: calc(100% - 24px);
