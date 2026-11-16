@@ -245,3 +245,41 @@ button { cursor: pointer; }
 @media (max-height: 620px) {
   .word-list {\n  min-height: 0;height: 60px; }
 }
+
+/* Final mobile layout: media determines its own size; only the word list is bounded and scrollable. */
+@media (max-width: 600px) {
+  .app-shell { height: auto; min-height: 100dvh; overflow: visible; }
+  .container {
+    height: auto;
+    min-height: calc(100dvh - 54px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: grid;
+    grid-template-rows: auto auto auto;
+    align-content: start;
+  }
+  .word-section {
+    min-height: 0;
+    max-height: 26vh;
+  }
+  .word-list {
+    min-height: 0;
+    max-height: calc(26vh - 38px);
+    overflow-y: auto;
+  }
+  .detail-area {
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto auto;
+  }
+  .detail-grid {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+  .image-wrap { aspect-ratio: 16 / 9; height: auto !important; }
+  .video-wrap { aspect-ratio: 16 / 9; height: auto !important; }
+}
+@media (max-height: 650px) and (max-width: 600px) {
+  .word-section { max-height: 22vh; }
+  .word-list { max-height: calc(22vh - 38px); }
+}
