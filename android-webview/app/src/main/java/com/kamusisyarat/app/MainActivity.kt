@@ -17,7 +17,6 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
-import androidx.activity.OnBackPressedCallback
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
 
@@ -48,17 +47,16 @@ class MainActivity : Activity() {
             webView.restoreState(savedInstanceState)
         }
 
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (fullscreenView != null) {
-                    hideFullscreen()
-                } else if (webView.canGoBack()) {
-                    webView.goBack()
-                } else {
-                    finish()
-                }
-            }
-        })
+    }
+
+    override fun onBackPressed() {
+        if (fullscreenView != null) {
+            hideFullscreen()
+        } else if (webView.canGoBack()) {
+            webView.goBack()
+        } else {
+            super.onBackPressed()
+        }
     }
 
     private fun configureWebView() {
