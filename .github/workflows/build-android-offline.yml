@@ -36,3 +36,5 @@ jobs:
           name: Kamus-Isyarat-Offline-debug-apk
           path: android-offline/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+# build trigger after Kotlin fix
