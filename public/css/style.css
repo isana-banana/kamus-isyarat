@@ -283,3 +283,51 @@ button { cursor: pointer; }
   .word-section { max-height: 22vh; }
   .word-list { max-height: calc(22vh - 38px); }
 }
+
+/* Final sizing model:
+   - media height comes from 16:9 aspect ratio
+   - word section takes the remaining viewport height
+   - word section never shrinks below roughly two rows of word buttons
+   - word list scrolls when there are more words than the available space
+*/
+@media (max-width: 600px) {
+  .app-shell {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .container {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: auto minmax(108px, 1fr) auto;
+    align-content: stretch;
+  }
+  .word-section {
+    min-height: 108px;
+    max-height: none;
+  }
+  .word-list {
+    min-height: 72px;
+    max-height: none;
+    overflow-y: auto;
+  }
+  .detail-area {
+    min-height: 0;
+    grid-template-rows: auto auto;
+  }
+  .detail-grid {
+    align-items: start;
+  }
+  .image-wrap {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    height: auto !important;
+  }
+  .video-wrap {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    height: auto !important;
+  }
+}
