@@ -64,7 +64,7 @@ button, input, select { font: inherit; }
   margin: 0 auto;
   padding: 10px 14px max(10px, env(safe-area-inset-bottom));
   display: grid;
-  grid-template-rows: auto minmax(150px, 31%) minmax(0, 1fr);
+  grid-template-rows: auto minmax(220px, 45%) minmax(0, 1fr);
   gap: 9px;
   overflow: hidden;
 }
@@ -143,7 +143,7 @@ button, input, select { font: inherit; }
 .detail-area {
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(105px, 25%) minmax(150px, 1fr);
+  grid-template-rows: minmax(95px, 34%) minmax(100px, 1fr);
   gap: 8px;
 }
 .detail-grid { min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
@@ -212,7 +212,7 @@ button { cursor: pointer; }
   .brand-icon { width: 30px; height: 30px; }
   .dictionary-select { width: min(59vw, 330px); font-size: 17px; }
   .admin-link { padding: 7px 11px; font-size: 13px; }
-  .container { padding: 8px 9px max(8px, env(safe-area-inset-bottom)); gap: 7px; grid-template-rows: auto minmax(150px, 30%) minmax(0, 1fr); }
+  .container { padding: 8px 9px max(8px, env(safe-area-inset-bottom)); gap: 7px; grid-template-rows: auto minmax(190px, 43%) minmax(0, 1fr); }
   .search-panel { min-height: 43px; }
   .search-panel input { font-size: 15px; }
   .word-section { gap: 3px; }
@@ -220,17 +220,17 @@ button { cursor: pointer; }
   .result-info { font-size: 11px; }
   .word-list { gap: 5px; }
   .word-button { min-height: 31px; padding: 6px 9px; font-size: 13px; }
-  .detail-area { grid-template-rows: minmax(92px, 24%) minmax(120px, 1fr); gap: 6px; }
+  .detail-area { grid-template-rows: minmax(85px, 32%) minmax(100px, 1fr); gap: 6px; }
   .detail-grid { gap: 5px; }
   .detail-cell, .video-section { padding: 7px; border-radius: 8px; }
   .detail-cell h2, .video-section h2 { margin-bottom: 4px; font-size: 13px; }
-  .definition-text { font-size: 12px; line-height: 1.35; }\n  .image-wrap, .video-wrap { height: calc(100% - 21px); }
+  .definition-text { font-size: 12px; line-height: 1.35; }\n
   .media-placeholder { font-size: 11px; }
 }
 
 @media (max-height: 650px) {
   .topbar { min-height: 48px; }
-  .container { padding-top: 6px; padding-bottom: 6px; gap: 5px; grid-template-rows: auto minmax(120px, 27%) minmax(0, 1fr); }
-  .detail-area { grid-template-rows: minmax(76px, 23%) minmax(100px, 1fr); gap: 5px; }
+  .container { padding-top: 6px; padding-bottom: 6px; gap: 5px; grid-template-rows: auto minmax(150px, 38%) minmax(0, 1fr); }
+  .detail-area { grid-template-rows: minmax(70px, 30%) minmax(90px, 1fr); gap: 5px; }
   .detail-cell, .video-section { padding: 6px; }
 }
