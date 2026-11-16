@@ -23,6 +23,7 @@ import androidx.webkit.WebViewFeature
 class MainActivity : Activity() {
     private lateinit var webView: WebView
     private lateinit var root: FrameLayout
+    private lateinit var statusBarBackground: View
     private var fullscreenView: View? = null
     private var fullscreenCallback: WebChromeClient.CustomViewCallback? = null
     private var uploadCallback: ValueCallback<Array<Uri>>? = null
@@ -32,13 +33,28 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestWindowFeature(Window.FEATURE_NO_TITLE)
+
+        // Android 15+ enforces edge-to-edge for apps targeting SDK 35.
+        // Keep website content below the system bars so they never overlap
+        // the website header.
         window.statusBarColor = Color.rgb(20, 83, 45)
+        window.navigationBarColor = Color.rgb(243, 248, 245)
 
         root = FrameLayout(this)
+        root.setBackgroundColor(Color.rgb(243, 248, 245))
+
+        statusBarBackground = View(this)
+        statusBarBackground.setBackgroundColor(Color.rgb(20, 83, 45))
+        root.addView(
+            statusBarBackground,
+            FrameLayout.LayoutParams(-1, 0)
+        )
+
         webView = WebView(this)
         root.addView(webView, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
 
+        applySystemBarInsets()
         configureWebView()
 
         if (savedInstanceState == null) {
@@ -46,7 +62,28 @@ class MainActivity : Activity() {
         } else {
             webView.restoreState(savedInstanceState)
         }
+    }
 
+    private fun applySystemBarInsets() {
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            val bars = insets.getInsets(
+                WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars()
+            )
+
+            val statusParams =
+                statusBarBackground.layoutParams as FrameLayout.LayoutParams
+            statusParams.height = bars.top
+            statusBarBackground.layoutParams = statusParams
+
+            val webParams = webView.layoutParams as FrameLayout.LayoutParams
+            webParams.topMargin = bars.top
+            webParams.bottomMargin = bars.bottom
+            webView.layoutParams = webParams
+
+            insets
+        }
+
+        root.requestApplyInsets()
     }
 
     override fun onBackPressed() {
