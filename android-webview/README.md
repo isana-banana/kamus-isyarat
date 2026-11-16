@@ -27,3 +27,6 @@ Aplikasi membutuhkan internet karena data kamus, gambar, dan video berasal dari 
 Video HTML5 tetap menggunakan WebView. Dukungan fullscreen ditangani oleh `WebChromeClient`.
 
 Website dan Worker tidak disalin ke APK, sehingga perubahan website dapat langsung terlihat pada APK.
+
+
+<!-- CI trigger -->
