@@ -91,9 +91,11 @@ function getFilteredWords() {
   const terms = query.split(/\s+/).filter(Boolean).slice(0, 5);
   return currentWords.filter(([word, item]) => {
     const normalizedWord = word.toLocaleLowerCase("id");
-    const definition = safeText(item.definisi).toLocaleLowerCase("id");
     if (!terms.length) return true;
-    return terms.some(term => normalizedWord.includes(term) || definition.includes(term));
+    // Pencarian berdasarkan nama kata, bukan isi definisi.
+    // Contoh: "makan" hanya menampilkan kata MAKAN,
+    // bukan LAPAR/MULUT/NASI hanya karena definisinya mengandung "makan".
+    return terms.some(term => normalizedWord.includes(term));
   });
 }
 
