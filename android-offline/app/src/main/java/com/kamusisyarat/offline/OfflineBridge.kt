@@ -33,7 +33,7 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
         for (i in 0 until all.length()) {
             val item = all.optJSONObject(i) ?: continue
             val id = item.optString("id")
-            val manifestFile = File(offlineRoot, safePart(id)?.let { "\$it/manifest.json" } ?: "")
+            val manifestFile = File(offlineRoot, safePart(id)?.let { "$it/manifest.json" } ?: "")
             if (manifestFile.isFile) downloaded.put(item)
         }
 
@@ -48,7 +48,7 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
     fun loadDictionary(id: String): String {
         val safe = safePart(id) ?: return JSONObject().put("error", "ID kamus tidak valid.").toString()
         return readText(
-            File(offlineRoot, "\$safe/manifest.json"),
+            File(offlineRoot, "$safe/manifest.json"),
             JSONObject().put("error", "Kamus belum diunduh.").toString()
         )
     }
@@ -57,9 +57,9 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
     fun mediaUrl(id: String, fileName: String): String {
         val safeId = safePart(id) ?: return ""
         val safeName = safeFile(fileName) ?: return ""
-        val local = File(offlineRoot, "\$safeId/media/\$safeName")
+        val local = File(offlineRoot, "$safeId/media/$safeName")
         if (local.isFile && local.length() > 0L) {
-            return "https://appassets.androidplatform.net/offline/\$safeId/media/\${encodePathPart(safeName)}"
+            return "https://appassets.androidplatform.net/offline/$safeId/media/${encodePathPart(safeName)}"
         }
         return ""
     }
@@ -68,7 +68,7 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
     fun syncCatalog(callbackName: String) {
         executor.execute {
             try {
-                val json = httpGetWithRetry("\$BASE/api/catalog")
+                val json = httpGetWithRetry("$BASE/api/catalog")
                 writeText(File(offlineRoot, "catalog.json"), json)
                 callback(callbackName, true, "Daftar kamus diperbarui.")
             } catch (e: Exception) {
@@ -82,7 +82,7 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
         executor.execute {
             try {
                 val safeId = safePart(id) ?: throw Exception("ID kamus tidak valid.")
-                val remote = JSONObject(httpGetWithRetry("\$BASE/api/dictionary/\${encodePathPart(id)}"))
+                val remote = JSONObject(httpGetWithRetry("$BASE/api/dictionary/${encodePathPart(id)}"))
                 val name = remote.optString("name", id)
                 val manifest = remote.getJSONObject("manifest")
                 val words = manifest.optJSONObject("kata")
@@ -167,9 +167,9 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
 
                 val missing = skipped.get()
                 val message = when {
-                    total == 0 -> "Kamus \"\$name\" berhasil disimpan. Tidak ada file media."
-                    missing == 0 -> "Kamus \"\$name\" berhasil diunduh/diperbarui. \$total file media tersedia."
-                    else -> "Kamus \"\$name\" tersimpan. \$missing file media tidak ditemukan/gagal dan akan dicoba lagi saat Update."
+                    total == 0 -> "Kamus \"$name\" berhasil disimpan. Tidak ada file media."
+                    missing == 0 -> "Kamus \"$name\" berhasil diunduh/diperbarui. $total file media tersedia."
+                    else -> "Kamus \"$name\" tersimpan. $missing file media tidak ditemukan/gagal dan akan dicoba lagi saat Update."
                 }
 
                 callback(callbackName, true, message)
@@ -199,14 +199,14 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
 
     private fun mediaUrlFor(dictionaryId: String, fileName: String): String {
         return if (looksLikeDriveId(fileName)) {
-            "\$BASE/api/media/\${encodePathPart(fileName)}"
+            "$BASE/api/media/${encodePathPart(fileName)}"
         } else {
-            "\$BASE/api/media/by-name/\${encodePathPart(dictionaryId)}/\${encodePathPart(fileName)}"
+            "$BASE/api/media/by-name/${encodePathPart(dictionaryId)}/${encodePathPart(fileName)}"
         }
     }
 
     private fun callback(name: String, ok: Boolean, message: String) {
-        val js = "\$name(\$ok,\${JSONObject.quote(message)})"
+        val js = "$name($ok,${JSONObject.quote(message)})"
         webView.post { webView.evaluateJavascript(js, null) }
     }
 
@@ -231,7 +231,7 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
         }
         return try {
             val code = connection.responseCode
-            if (code !in 200..299) throw Exception("Server mengembalikan HTTP \$code.")
+            if (code !in 200..299) throw Exception("Server mengembalikan HTTP $code.")
             connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } finally {
             connection.disconnect()
@@ -263,7 +263,7 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
 
         try {
             val code = connection.responseCode
-            if (code !in 200..299) throw Exception("Media tidak tersedia (HTTP \$code).")
+            if (code !in 200..299) throw Exception("Media tidak tersedia (HTTP $code).")
 
             FileOutputStream(target).use { output ->
                 connection.inputStream.use { input -> input.copyTo(output, 64 * 1024) }
