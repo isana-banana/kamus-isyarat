@@ -64,7 +64,7 @@ button, input, select { font: inherit; }
   margin: 0 auto;
   padding: 10px 14px max(10px, env(safe-area-inset-bottom));
   display: grid;
-  grid-template-rows: auto minmax(220px, 45%) minmax(0, 1fr);
+  grid-template-rows: auto minmax(220px, 52%) minmax(0, 1fr);
   gap: 9px;
   overflow: hidden;
 }
@@ -212,7 +212,7 @@ button { cursor: pointer; }
   .brand-icon { width: 30px; height: 30px; }
   .dictionary-select { width: min(59vw, 330px); font-size: 17px; }
   .admin-link { padding: 7px 11px; font-size: 13px; }
-  .container { padding: 8px 9px max(8px, env(safe-area-inset-bottom)); gap: 7px; grid-template-rows: auto minmax(190px, 43%) minmax(0, 1fr); }
+  .container { padding: 8px 9px max(8px, env(safe-area-inset-bottom)); gap: 7px; grid-template-rows: auto minmax(190px, 52%) minmax(0, 1fr); }
   .search-panel { min-height: 43px; }
   .search-panel input { font-size: 15px; }
   .word-section { gap: 3px; }
@@ -234,3 +234,4 @@ button { cursor: pointer; }
   .detail-area { grid-template-rows: minmax(70px, 30%) minmax(90px, 1fr); gap: 5px; }
   .detail-cell, .video-section { padding: 6px; }
 }
+\n.word-video{display:block;width:100%;height:100%;object-fit:contain;background:#000;}\n
