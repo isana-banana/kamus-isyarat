@@ -15,11 +15,11 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
     private val executor = Executors.newSingleThreadExecutor()
 
     @JavascriptInterface fun localCatalog(): String =
-        readText(File(context.filesDir, "offline/catalog.json"), "{"items":[]}")
+        readText(File(context.filesDir, "offline/catalog.json"), "{\"items\":[]}")
 
     @JavascriptInterface fun loadDictionary(id: String): String {
-        val safe = safePart(id) ?: return "{"error":"ID kamus tidak valid."}"
-        return readText(File(context.filesDir, "offline/${safe}/manifest.json"), "{"error":"Kamus belum diunduh."}")
+        val safe = safePart(id) ?: return "{\"error\":\"ID kamus tidak valid.\"}"
+        return readText(File(context.filesDir, "offline/${safe}/manifest.json"), "{\"error\":\"Kamus belum diunduh.\"}")
     }
 
     @JavascriptInterface fun mediaUrl(id: String, fileName: String): String {
@@ -67,7 +67,7 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
                 }
                 writeText(File(root, "manifest.json"), JSONObject().put("id", id).put("name", name).put("manifest", manifest).toString())
                 writeText(File(root, "media.json"), JSONObject(names.associateWith { File(mediaDir, it).length() }).toString())
-                callback(callbackName, true, "Kamus "${name}" berhasil diperbarui.")
+                callback(callbackName, true, "Kamus \"${name}\" berhasil diperbarui.")
             } catch (e: Exception) { callback(callbackName, false, e.message ?: "Gagal mengunduh kamus.") }
         }
     }
