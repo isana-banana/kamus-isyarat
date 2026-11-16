@@ -1,0 +1,8 @@
+const list=document.getElementById("downloadList"),msg=document.getElementById("downloadMessage"),refresh=document.getElementById("refreshCatalog");
+function message(t,ok=true){msg.textContent=t;msg.className="message "+(ok?"success":"error")}
+function render(items){list.replaceChildren();if(!items.length){list.innerHTML='<div class="empty-state">Belum ada kamus online.</div>';return}items.forEach(item=>{const row=document.createElement("div");row.className="download-item";const info=document.createElement("div");const strong=document.createElement("strong");strong.textContent=item.name;const small=document.createElement("small");small.textContent=(item.wordCount||0)+" kata";info.append(strong,small);const b=document.createElement("button");b.className="primary-button";b.textContent="Unduh / Update";b.onclick=()=>sync(item.id,b);row.append(info,b);list.appendChild(row)})}
+function sync(id,b){b.disabled=true;b.textContent="Mengunduh...";message("Mengunduh dan memeriksa file media...");Android.syncDictionary(id,"syncDone")}
+window.syncDone=(ok,text)=>{message(text,ok);render(JSON.parse(Android.localCatalog()).items);document.querySelectorAll(".primary-button").forEach(x=>{if(x.textContent==="Mengunduh..."){x.disabled=false;x.textContent="Unduh / Update"}})}
+refresh.onclick=()=>{refresh.disabled=true;message("Memperbarui daftar kamus...");Android.syncCatalog("catalogDone")}
+window.catalogDone=(ok,text)=>{refresh.disabled=false;message(text,ok);if(ok)render(JSON.parse(Android.localCatalog()).items)}
+render(JSON.parse(Android.localCatalog()).items);
