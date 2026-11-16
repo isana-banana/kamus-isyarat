@@ -25,6 +25,9 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
     @JavascriptInterface fun mediaUrl(id: String, fileName: String): String {
         val safeId = safePart(id) ?: return ""
         val safeName = safeFile(fileName) ?: return ""
+        if (safeName.matches(Regex("[A-Za-z0-9_-]{20,}"))) {
+            return "${BASE}/api/media/${URLEncoder.encode(safeName, "UTF-8")}"
+        }
         return "https://appassets.androidplatform.net/offline/${safeId}/media/${URLEncoder.encode(safeName, "UTF-8").replace("+", "%20")}"
     }
 
@@ -41,34 +44,60 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
 
     @JavascriptInterface fun syncDictionary(id: String, callbackName: String) {
         executor.execute {
+            var downloaded = 0
+            var skipped = 0
             try {
                 val safeId = safePart(id) ?: throw Exception("ID kamus tidak valid.")
-                val remote = JSONObject(httpGet("${BASE}/api/dictionary/${URLEncoder.encode(id, "UTF-8")}"))
+                val remote = JSONObject(httpGetWithRetry("${BASE}/api/dictionary/${URLEncoder.encode(id, "UTF-8")}"))
                 val name = remote.optString("name", id)
                 val manifest = remote.getJSONObject("manifest")
                 val words = manifest.optJSONObject("kata") ?: throw Exception("Manifest kamus tidak memiliki bagian kata.")
                 val root = File(context.filesDir, "offline/${safeId}")
                 val mediaDir = File(root, "media").apply { mkdirs() }
-                val names = linkedSetOf<String>()
+
+                val refs = linkedSetOf<String>()
                 val keys = words.keys()
                 while (keys.hasNext()) {
                     val item = words.getJSONObject(keys.next())
                     listOf("gambar", "video").forEach { field ->
                         val v = item.optString(field, "").trim()
-                        if (v.isNotEmpty() && !looksLikeDriveId(v)) safeFile(v)?.let { names.add(it) }
+                        if (v.isNotEmpty()) safeFile(v)?.let { refs.add(it) }
                     }
                 }
-                for (nameFile in names) {
-                    val target = File(mediaDir, nameFile)
-                    val remoteSize = remoteSize(id, nameFile)
-                    if (!target.exists() || (remoteSize >= 0 && remoteSize != target.length())) {
-                        download("${BASE}/api/media/by-name/${URLEncoder.encode(id, "UTF-8")}/${URLEncoder.encode(nameFile, "UTF-8")}", target)
+
+                for (ref in refs) {
+                    val target = File(mediaDir, ref)
+                    if (target.exists() && target.length() > 0L) continue
+                    try {
+                        val url = if (ref.matches(Regex("[A-Za-z0-9_-]{20,}"))) {
+                            "${BASE}/api/media/${URLEncoder.encode(ref, "UTF-8")}"
+                        } else {
+                            "${BASE}/api/media/by-name/${URLEncoder.encode(id, "UTF-8")}/${URLEncoder.encode(ref, "UTF-8")}"
+                        }
+                        downloadWithRetry(url, target)
+                        if (target.exists() && target.length() > 0L) downloaded++ else skipped++
+                    } catch (_: Exception) {
+                        target.delete()
+                        skipped++
                     }
                 }
-                writeText(File(root, "manifest.json"), JSONObject().put("id", id).put("name", name).put("manifest", manifest).toString())
-                writeText(File(root, "media.json"), JSONObject(names.associateWith { File(mediaDir, it).length() }).toString())
-                callback(callbackName, true, "Kamus \"${name}\" berhasil diperbarui.")
-            } catch (e: Exception) { callback(callbackName, false, e.message ?: "Gagal mengunduh kamus.") }
+
+                writeText(File(root, "manifest.json"), JSONObject()
+                    .put("id", id)
+                    .put("name", name)
+                    .put("manifest", manifest)
+                    .toString())
+                writeText(File(root, "media.json"), JSONObject(refs.associateWith { File(mediaDir, it).length() }).toString())
+
+                val message = if (skipped == 0) {
+                    "Kamus \"${name}\" berhasil diunduh/diperbarui."
+                } else {
+                    "Kamus \"${name}\" tersimpan. ${skipped} file media belum tersedia dan akan dicoba lagi saat Update."
+                }
+                callback(callbackName, true, message)
+            } catch (e: Exception) {
+                callback(callbackName, false, e.message ?: "Gagal mengunduh kamus.")
+            }
         }
     }
 
@@ -76,6 +105,17 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
         val js = "${name}(${ok},${JSONObject.quote(message)})"
         webView.post { webView.evaluateJavascript(js, null) }
     }
+    private fun httpGetWithRetry(url: String): String {
+        var last: Exception? = null
+        repeat(3) { attempt ->
+            try { return httpGet(url) } catch (e: Exception) {
+                last = e
+                Thread.sleep((1000L * (attempt + 1)))
+            }
+        }
+        throw last ?: Exception("Gagal terhubung ke server.")
+    }
+
     private fun httpGet(url: String): String {
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 20000; c.readTimeout = 120000; c.requestMethod = "GET"
@@ -86,6 +126,17 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
         c.connectTimeout = 15000; c.readTimeout = 30000; c.requestMethod = "HEAD"
         return try { c.getHeaderFieldLong("Content-Length", -1L) } finally { c.disconnect() }
     }
+    private fun downloadWithRetry(url: String, target: File) {
+        var last: Exception? = null
+        repeat(3) { attempt ->
+            try { download(url, target); return } catch (e: Exception) {
+                last = e
+                Thread.sleep((1000L * (attempt + 1)))
+            }
+        }
+        throw last ?: Exception("Gagal mengunduh file.")
+    }
+
     private fun download(url: String, target: File) {
         target.parentFile?.mkdirs()
         val c = URL(url).openConnection() as HttpURLConnection
