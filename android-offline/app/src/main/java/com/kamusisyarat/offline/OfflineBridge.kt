@@ -1,4 +1,5 @@
 package com.kamusisyarat.offline
+
 import android.content.Context
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -9,91 +10,168 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 class OfflineBridge(private val context: Context, private val webView: WebView) {
-    companion object { private const val BASE = "https://kamus-isyarat.bravewarrior011.workers.dev" }
-    private val executor = Executors.newSingleThreadExecutor()
-
-    @JavascriptInterface fun localCatalog(): String =
-        readText(File(context.filesDir, "offline/catalog.json"), "{\"items\":[]}")
-
-    @JavascriptInterface fun loadDictionary(id: String): String {
-        val safe = safePart(id) ?: return "{\"error\":\"ID kamus tidak valid.\"}"
-        return readText(File(context.filesDir, "offline/${safe}/manifest.json"), "{\"error\":\"Kamus belum diunduh.\"}")
+    companion object {
+        private const val BASE = "https://kamus-isyarat.bravewarrior011.workers.dev"
+        private const val MAX_PARALLEL = 4
     }
 
-    @JavascriptInterface fun mediaUrl(id: String, fileName: String): String {
+    private val executor = Executors.newSingleThreadExecutor()
+    private val mediaExecutor = Executors.newFixedThreadPool(MAX_PARALLEL)
+
+    private val offlineRoot: File
+        get() = File(context.filesDir, "offline")
+
+    @JavascriptInterface
+    fun localCatalog(): String {
+        val online = readJsonObject(File(offlineRoot, "catalog.json"), JSONObject().put("items", org.json.JSONArray()))
+        val all = online.optJSONArray("items") ?: org.json.JSONArray()
+        val downloaded = org.json.JSONArray()
+
+        for (i in 0 until all.length()) {
+            val item = all.optJSONObject(i) ?: continue
+            val id = item.optString("id")
+            val manifestFile = File(offlineRoot, safePart(id)?.let { "\$it/manifest.json" } ?: "")
+            if (manifestFile.isFile) downloaded.put(item)
+        }
+
+        return JSONObject().put("items", downloaded).toString()
+    }
+
+    @JavascriptInterface
+    fun onlineCatalog(): String =
+        readText(File(offlineRoot, "catalog.json"), JSONObject().put("items", org.json.JSONArray()).toString())
+
+    @JavascriptInterface
+    fun loadDictionary(id: String): String {
+        val safe = safePart(id) ?: return JSONObject().put("error", "ID kamus tidak valid.").toString()
+        return readText(
+            File(offlineRoot, "\$safe/manifest.json"),
+            JSONObject().put("error", "Kamus belum diunduh.").toString()
+        )
+    }
+
+    @JavascriptInterface
+    fun mediaUrl(id: String, fileName: String): String {
         val safeId = safePart(id) ?: return ""
         val safeName = safeFile(fileName) ?: return ""
-        if (safeName.matches(Regex("[A-Za-z0-9_-]{20,}"))) {
-            return "${BASE}/api/media/${URLEncoder.encode(safeName, "UTF-8")}"
+        val local = File(offlineRoot, "\$safeId/media/\$safeName")
+        if (local.isFile && local.length() > 0L) {
+            return "https://appassets.androidplatform.net/offline/\$safeId/media/\${encodePathPart(safeName)}"
         }
-        return "https://appassets.androidplatform.net/offline/${safeId}/media/${URLEncoder.encode(safeName, "UTF-8").replace("+", "%20")}"
+        return ""
     }
 
-    @JavascriptInterface fun syncCatalog(callbackName: String) {
+    @JavascriptInterface
+    fun syncCatalog(callbackName: String) {
         executor.execute {
             try {
-                val json = httpGet("${BASE}/api/catalog")
-                val dir = File(context.filesDir, "offline").apply { mkdirs() }
-                writeText(File(dir, "catalog.json"), json)
+                val json = httpGetWithRetry("\$BASE/api/catalog")
+                writeText(File(offlineRoot, "catalog.json"), json)
                 callback(callbackName, true, "Daftar kamus diperbarui.")
-            } catch (e: Exception) { callback(callbackName, false, e.message ?: "Gagal memperbarui daftar kamus.") }
+            } catch (e: Exception) {
+                callback(callbackName, false, e.message ?: "Gagal memperbarui daftar kamus.")
+            }
         }
     }
 
-    @JavascriptInterface fun syncDictionary(id: String, callbackName: String) {
+    @JavascriptInterface
+    fun syncDictionary(id: String, callbackName: String) {
         executor.execute {
-            var downloaded = 0
-            var skipped = 0
             try {
                 val safeId = safePart(id) ?: throw Exception("ID kamus tidak valid.")
-                val remote = JSONObject(httpGetWithRetry("${BASE}/api/dictionary/${URLEncoder.encode(id, "UTF-8")}"))
+                val remote = JSONObject(httpGetWithRetry("\$BASE/api/dictionary/\${encodePathPart(id)}"))
                 val name = remote.optString("name", id)
                 val manifest = remote.getJSONObject("manifest")
-                val words = manifest.optJSONObject("kata") ?: throw Exception("Manifest kamus tidak memiliki bagian kata.")
-                val root = File(context.filesDir, "offline/${safeId}")
+                val words = manifest.optJSONObject("kata")
+                    ?: throw Exception("Manifest kamus tidak memiliki bagian kata.")
+
+                val root = File(offlineRoot, safeId)
                 val mediaDir = File(root, "media").apply { mkdirs() }
+                val oldMeta = readJsonObject(File(root, "media.json"), JSONObject())
+                val newMeta = JSONObject()
 
                 val refs = linkedSetOf<String>()
                 val keys = words.keys()
                 while (keys.hasNext()) {
-                    val item = words.getJSONObject(keys.next())
+                    val item = words.optJSONObject(keys.next()) ?: continue
                     listOf("gambar", "video").forEach { field ->
-                        val v = item.optString(field, "").trim()
-                        if (v.isNotEmpty()) safeFile(v)?.let { refs.add(it) }
-                    }
-                }
-
-                for (ref in refs) {
-                    val target = File(mediaDir, ref)
-                    if (target.exists() && target.length() > 0L) continue
-                    try {
-                        val url = if (ref.matches(Regex("[A-Za-z0-9_-]{20,}"))) {
-                            "${BASE}/api/media/${URLEncoder.encode(ref, "UTF-8")}"
-                        } else {
-                            "${BASE}/api/media/by-name/${URLEncoder.encode(id, "UTF-8")}/${URLEncoder.encode(ref, "UTF-8")}"
+                        val value = item.optString(field, "").trim()
+                        if (value.isNotEmpty()) {
+                            safeFile(value)?.let { refs.add(it) }
                         }
-                        downloadWithRetry(url, target)
-                        if (target.exists() && target.length() > 0L) downloaded++ else skipped++
-                    } catch (_: Exception) {
-                        target.delete()
-                        skipped++
                     }
                 }
 
-                writeText(File(root, "manifest.json"), JSONObject()
-                    .put("id", id)
-                    .put("name", name)
-                    .put("manifest", manifest)
-                    .toString())
-                writeText(File(root, "media.json"), JSONObject(refs.associateWith { File(mediaDir, it).length() }).toString())
+                val downloaded = AtomicInteger(0)
+                val skipped = AtomicInteger(0)
+                val total = refs.size
 
-                val message = if (skipped == 0) {
-                    "Kamus \"${name}\" berhasil diunduh/diperbarui."
-                } else {
-                    "Kamus \"${name}\" tersimpan. ${skipped} file media belum tersedia dan akan dicoba lagi saat Update."
+                val futures = refs.map { ref ->
+                    mediaExecutor.submit {
+                        try {
+                            val target = File(mediaDir, ref)
+                            val old = oldMeta.optJSONObject(ref) ?: JSONObject()
+                            val meta = remoteMeta(id, ref)
+
+                            if (meta == null) {
+                                target.delete()
+                                skipped.incrementAndGet()
+                                return@submit
+                            }
+
+                            val remoteSize = meta.optLong("size", -1L)
+                            val remoteTag = meta.optString("etag", "")
+                            val sameSize = remoteSize >= 0L && target.isFile && target.length() == remoteSize
+                            val sameTag = remoteTag.isNotEmpty() && remoteTag == old.optString("etag", "")
+
+                            if (target.isFile && target.length() > 0L && (sameTag || sameSize)) {
+                                newMeta.put(ref, meta)
+                                return@submit
+                            }
+
+                            downloadWithRetry(mediaUrlFor(id, ref), target)
+
+                            if (target.isFile && target.length() > 0L) {
+                                if (remoteSize >= 0L && target.length() != remoteSize) {
+                                    target.delete()
+                                    skipped.incrementAndGet()
+                                    return@submit
+                                }
+                                newMeta.put(ref, meta)
+                                downloaded.incrementAndGet()
+                            } else {
+                                target.delete()
+                                skipped.incrementAndGet()
+                            }
+                        } catch (_: Exception) {
+                            File(mediaDir, ref).delete()
+                            skipped.incrementAndGet()
+                        }
+                    }
                 }
+
+                futures.forEach { it.get() }
+
+                writeText(
+                    File(root, "manifest.json"),
+                    JSONObject()
+                        .put("id", id)
+                        .put("name", name)
+                        .put("manifest", manifest)
+                        .toString()
+                )
+                writeText(File(root, "media.json"), newMeta.toString())
+
+                val missing = skipped.get()
+                val message = when {
+                    total == 0 -> "Kamus \"\$name\" berhasil disimpan. Tidak ada file media."
+                    missing == 0 -> "Kamus \"\$name\" berhasil diunduh/diperbarui. \$total file media tersedia."
+                    else -> "Kamus \"\$name\" tersimpan. \$missing file media tidak ditemukan/gagal dan akan dicoba lagi saat Update."
+                }
+
                 callback(callbackName, true, message)
             } catch (e: Exception) {
                 callback(callbackName, false, e.message ?: "Gagal mengunduh kamus.")
@@ -101,37 +179,75 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
         }
     }
 
+    private fun remoteMeta(dictionaryId: String, fileName: String): JSONObject? {
+        val connection = (URL(mediaUrlFor(dictionaryId, fileName)).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 30000
+            requestMethod = "HEAD"
+        }
+
+        return try {
+            val code = connection.responseCode
+            if (code !in 200..299) return null
+            JSONObject()
+                .put("size", connection.getHeaderFieldLong("Content-Length", -1L))
+                .put("etag", connection.getHeaderField("ETag") ?: "")
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun mediaUrlFor(dictionaryId: String, fileName: String): String {
+        return if (looksLikeDriveId(fileName)) {
+            "\$BASE/api/media/\${encodePathPart(fileName)}"
+        } else {
+            "\$BASE/api/media/by-name/\${encodePathPart(dictionaryId)}/\${encodePathPart(fileName)}"
+        }
+    }
+
     private fun callback(name: String, ok: Boolean, message: String) {
-        val js = "${name}(${ok},${JSONObject.quote(message)})"
+        val js = "\$name(\$ok,\${JSONObject.quote(message)})"
         webView.post { webView.evaluateJavascript(js, null) }
     }
+
     private fun httpGetWithRetry(url: String): String {
         var last: Exception? = null
         repeat(3) { attempt ->
-            try { return httpGet(url) } catch (e: Exception) {
+            try {
+                return httpGet(url)
+            } catch (e: Exception) {
                 last = e
-                Thread.sleep((1000L * (attempt + 1)))
+                Thread.sleep(1000L * (attempt + 1))
             }
         }
         throw last ?: Exception("Gagal terhubung ke server.")
     }
 
     private fun httpGet(url: String): String {
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 20000; c.readTimeout = 120000; c.requestMethod = "GET"
-        return try { c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() } } finally { c.disconnect() }
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000
+            readTimeout = 60000
+            requestMethod = "GET"
+        }
+        return try {
+            val code = connection.responseCode
+            if (code !in 200..299) throw Exception("Server mengembalikan HTTP \$code.")
+            connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+        } finally {
+            connection.disconnect()
+        }
     }
-    private fun remoteSize(id: String, fileName: String): Long {
-        val c = URL("${BASE}/api/media/by-name/${URLEncoder.encode(id, "UTF-8")}/${URLEncoder.encode(fileName, "UTF-8")}").openConnection() as HttpURLConnection
-        c.connectTimeout = 15000; c.readTimeout = 30000; c.requestMethod = "HEAD"
-        return try { c.getHeaderFieldLong("Content-Length", -1L) } finally { c.disconnect() }
-    }
+
     private fun downloadWithRetry(url: String, target: File) {
         var last: Exception? = null
         repeat(3) { attempt ->
-            try { download(url, target); return } catch (e: Exception) {
+            try {
+                download(url, target)
+                return
+            } catch (e: Exception) {
                 last = e
-                Thread.sleep((1000L * (attempt + 1)))
+                target.delete()
+                Thread.sleep(1000L * (attempt + 1))
             }
         }
         throw last ?: Exception("Gagal mengunduh file.")
@@ -139,14 +255,49 @@ class OfflineBridge(private val context: Context, private val webView: WebView) 
 
     private fun download(url: String, target: File) {
         target.parentFile?.mkdirs()
-        val c = URL(url).openConnection() as HttpURLConnection
-        c.connectTimeout = 20000; c.readTimeout = 180000; c.requestMethod = "GET"
-        try { c.inputStream.use { input -> FileOutputStream(target).use { output -> input.copyTo(output) } } }
-        finally { c.disconnect() }
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 10000
+            readTimeout = 120000
+            requestMethod = "GET"
+        }
+
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) throw Exception("Media tidak tersedia (HTTP \$code).")
+
+            FileOutputStream(target).use { output ->
+                connection.inputStream.use { input -> input.copyTo(output, 64 * 1024) }
+            }
+        } finally {
+            connection.disconnect()
+        }
     }
-    private fun readText(file: File, fallback: String) = if (file.exists()) file.readText(Charsets.UTF_8) else fallback
-    private fun writeText(file: File, text: String) { file.parentFile?.mkdirs(); file.writeText(text, Charsets.UTF_8) }
-    private fun safePart(v: String): String? = if (v.matches(Regex("[A-Za-z0-9_-]{1,100}"))) v else null
-    private fun safeFile(v: String): String? { val x=v.trim(); return if (x.isEmpty()||x.contains("/")||x.contains("\\")||x=="."||x=="..") null else x }
-    private fun looksLikeDriveId(v: String) = v.matches(Regex("[A-Za-z0-9_-]{20,}"))
+
+    private fun readJsonObject(file: File, fallback: JSONObject): JSONObject {
+        return if (file.isFile) {
+            try { JSONObject(file.readText(Charsets.UTF_8)) } catch (_: Exception) { fallback }
+        } else fallback
+    }
+
+    private fun readText(file: File, fallback: String): String =
+        if (file.isFile) file.readText(Charsets.UTF_8) else fallback
+
+    private fun writeText(file: File, text: String) {
+        file.parentFile?.mkdirs()
+        file.writeText(text, Charsets.UTF_8)
+    }
+
+    private fun encodePathPart(value: String): String =
+        URLEncoder.encode(value, "UTF-8").replace("+", "%20")
+
+    private fun safePart(value: String): String? =
+        if (value.matches(Regex("[A-Za-z0-9_-]{1,100}"))) value else null
+
+    private fun safeFile(value: String): String? {
+        val x = value.trim()
+        return if (x.isEmpty() || x.contains("/") || x.contains("\\") || x == "." || x == "..") null else x
+    }
+
+    private fun looksLikeDriveId(value: String): Boolean =
+        value.matches(Regex("[A-Za-z0-9_-]{20,}"))
 }
