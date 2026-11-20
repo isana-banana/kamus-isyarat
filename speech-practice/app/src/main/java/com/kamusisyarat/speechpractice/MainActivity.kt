@@ -42,7 +42,7 @@ class MainActivity:ComponentActivity(){
 }
 private enum class Mode{PRACTICE,FREE}
 private data class UiState(val mode:Mode=Mode.PRACTICE,val target:String="MA",val result:String="",val score:Int?=null,val status:String="Siap",val listening:Boolean=false)
-@Composable fun Screen(s:UiState,onMode:(Mode)->Unit,onTarget:(String)->Unit,onListen:()->Unit){
+@Composable private fun Screen(s:UiState,onMode:(Mode)->Unit,onTarget:(String)->Unit,onListen:()->Unit){
  val c=when{ s.score==null->MaterialTheme.colorScheme.primary;s.score>=85->Color(0xFF2E7D32);s.score>=60->Color(0xFFF9A825);else->Color(0xFFC62828)}
  Column(Modifier.fillMaxSize().padding(20.dp),horizontalAlignment=Alignment.CenterHorizontally){
   Text("Latihan Bicara",style=MaterialTheme.typography.headlineMedium);Spacer(Modifier.height(12.dp))
