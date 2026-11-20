@@ -4,11 +4,6 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
-val releaseKeystore = providers.environmentVariable("KEYSTORE_FILE").orNull
-val releaseStorePassword = providers.environmentVariable("KEYSTORE_PASSWORD").orNull
-val releaseKeyAlias = providers.environmentVariable("KEY_ALIAS").orNull
-val releaseKeyPassword = providers.environmentVariable("KEY_PASSWORD").orNull
-
 android {
     namespace = "com.kamusisyarat.speechpractice"
     compileSdk = 35
@@ -21,22 +16,8 @@ android {
         versionName = "0.1.0"
     }
 
-    signingConfigs {
-        create("release") {
-            if (releaseKeystore != null && releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null) {
-                storeFile = file(releaseKeystore)
-                storePassword = releaseStorePassword
-                keyAlias = releaseKeyAlias
-                keyPassword = releaseKeyPassword
-            }
-        }
-    }
-
     buildTypes {
         getByName("release") {
-            if (releaseKeystore != null && releaseStorePassword != null && releaseKeyAlias != null && releaseKeyPassword != null) {
-                signingConfig = signingConfigs.getByName("release")
-            }
             isMinifyEnabled = false
         }
     }
