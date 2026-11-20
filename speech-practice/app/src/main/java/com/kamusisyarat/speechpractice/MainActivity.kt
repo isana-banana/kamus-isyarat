@@ -71,13 +71,14 @@ class MainActivity : ComponentActivity() {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Screen(
                         state,
-                        { mode -> state = state.copy(mode = mode, result = "", confidence = null, status = "Siap") },
+                        { mode -> state = state.copy(mode = mode, result = "", confidence = null, score = null, status = "Siap") },
                         { target ->
                             state = state.copy(
                                 target = target,
                                 references = referenceStore.list(target),
                                 result = "",
-                                confidence = null
+                                confidence = null,
+                                score = null
                             )
                         },
                         ::requestAudio,
@@ -202,21 +203,33 @@ class MainActivity : ComponentActivity() {
                 }
                 override fun onBeginningOfSpeech() { state = state.copy(status = "Mendeteksi suara…") }
                 override fun onEndOfSpeech() { state = state.copy(status = "Memproses…") }
-                override fun onError(e: Int) { state = state.copy(status = err(e), listening = false, confidence = null) }
+                override fun onError(e: Int) {
+                    state = state.copy(status = err(e), listening = false, confidence = null,
+                        score = if (state.mode == Mode.PRACTICE) 0 else null)
+                }
                 override fun onResults(b: Bundle?) {
-                    val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    val results = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+                    val t = results.firstOrNull().orEmpty()
                     val raw = b?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)?.firstOrNull()
                     val confidence = raw?.takeIf { it in 0f..1f }?.times(100f)?.roundToInt()
-                    state = state.copy(
-                        result = t,
-                        confidence = confidence,
-                        status = if (t.isBlank()) "Suara tidak membentuk kata" else "Selesai",
-                        listening = false
-                    )
+                    val score = if (state.mode == Mode.PRACTICE) {
+                        results.maxOfOrNull { Similarity.score(state.target, it) } ?: 0
+                    } else null
+                    state = state.copy(result = t, confidence = confidence, score = score,
+                        status = if (t.isBlank()) {
+                            if (state.mode == Mode.PRACTICE) "Tidak dikenali — nilai 0%" else "Suara tidak membentuk kata"
+                        } else if (state.mode == Mode.PRACTICE) scoreLabel(score ?: 0) else "Selesai",
+                        listening = false)
                 }
                 override fun onPartialResults(b: Bundle?) {
-                    val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
-                    if (t.isNotBlank()) state = state.copy(result = t)
+                    val results = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+                    val t = results.firstOrNull().orEmpty()
+                    if (t.isNotBlank()) {
+                        val score = if (state.mode == Mode.PRACTICE)
+                            results.maxOfOrNull { Similarity.score(state.target, it) } ?: 0 else null
+                        state = state.copy(result = t, score = score,
+                            status = if (state.mode == Mode.PRACTICE) scoreLabel(score ?: 0) else "Mendengar…")
+                    }
                 }
                 override fun onRmsChanged(v: Float) {}
                 override fun onBufferReceived(b: ByteArray?) {}
@@ -232,6 +245,12 @@ class MainActivity : ComponentActivity() {
         }
         state = state.copy(listening = true, result = "", confidence = null, status = "Memulai…")
         recognizer?.startListening(i)
+    }
+
+    private fun scoreLabel(score: Int) = when {
+        score >= 80 -> "Hijau — hampir/sangat sesuai ($score%)"
+        score >= 50 -> "Kuning — agak mirip ($score%)"
+        else -> "Merah — belum sesuai ($score%)"
     }
 
     private fun err(e: Int) = when (e) {
@@ -258,6 +277,7 @@ private data class UiState(
     val target: String = "ma",
     val result: String = "",
     val confidence: Int? = null,
+    val score: Int? = null,
     val status: String = "Siap",
     val listening: Boolean = false,
     val recordingReference: Boolean = false,
