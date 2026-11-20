@@ -10,8 +10,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      SPEECH_SIGNING_KEY_PEM: ${{ secrets.SPEECH_SIGNING_KEY_PEM }}
-      SPEECH_SIGNING_CERT_PEM: ${{ secrets.SPEECH_SIGNING_CERT_PEM }}
+      SPEECH_KEYSTORE_BASE64: ${{ secrets.SPEECH_KEYSTORE_BASE64 }}
+      SPEECH_STORE_PASSWORD: ${{ secrets.SPEECH_STORE_PASSWORD }}
+      SPEECH_KEY_PASSWORD: ${{ secrets.SPEECH_KEY_PASSWORD }}
+      SPEECH_KEY_ALIAS: ${{ secrets.SPEECH_KEY_ALIAS }}
 
     steps:
       - name: Checkout
@@ -34,33 +36,19 @@ jobs:
       - name: Build unsigned release APK
         run: gradle -p speech-practice assembleRelease
 
-      - name: Sign release APK with text PEM key
-        if: env.SPEECH_SIGNING_KEY_PEM != '' && env.SPEECH_SIGNING_CERT_PEM != ''
-        env:
-          SIGNING_KEY: ${{ secrets.SPEECH_SIGNING_KEY_PEM }}
-          SIGNING_CERT: ${{ secrets.SPEECH_SIGNING_CERT_PEM }}
+      - name: Sign release APK with PKCS12 keystore
+        if: env.SPEECH_KEYSTORE_BASE64 != '' && env.SPEECH_STORE_PASSWORD != '' && env.SPEECH_KEY_PASSWORD != '' && env.SPEECH_KEY_ALIAS != ''
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/signing"
-          printf '%s' "$SIGNING_KEY" > "$RUNNER_TEMP/signing/key.pem"
-          printf '%s' "$SIGNING_CERT" > "$RUNNER_TEMP/signing/cert.pem"
+          printf '%s' "$SPEECH_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/signing/release.p12"
 
-          if ! openssl pkey -in "$RUNNER_TEMP/signing/key.pem" -noout >/dev/null 2>&1; then
-            echo "::error::SPEECH_SIGNING_KEY_PEM bukan private key PEM yang valid."
-            exit 1
-          fi
-          if ! openssl x509 -in "$RUNNER_TEMP/signing/cert.pem" -noout >/dev/null 2>&1; then
-            echo "::error::SPEECH_SIGNING_CERT_PEM bukan certificate PEM yang valid."
-            exit 1
-          fi
-
-          # apksigner requires an unencrypted PKCS#8 private key.
-          openssl pkcs8 -topk8 -nocrypt -in "$RUNNER_TEMP/signing/key.pem" -out "$RUNNER_TEMP/signing/key-pkcs8.pem"
+          keytool -list -keystore "$RUNNER_TEMP/signing/release.p12" -storetype PKCS12 \
+            -storepass:env SPEECH_STORE_PASSWORD -alias "$SPEECH_KEY_ALIAS" >/dev/null
 
           BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
           APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
-
           test -x "$ZIPALIGN"
           test -x "$APKSIGNER"
 
@@ -69,7 +57,13 @@ jobs:
           OUTPUT="speech-practice/app/build/outputs/apk/release/app-release.apk"
 
           "$ZIPALIGN" -f -p 4 "$INPUT" "$ALIGNED"
-          "$APKSIGNER" sign --key "$RUNNER_TEMP/signing/key-pkcs8.pem" --cert "$RUNNER_TEMP/signing/cert.pem" --out "$OUTPUT" "$ALIGNED"
+          "$APKSIGNER" sign \
+            --ks "$RUNNER_TEMP/signing/release.p12" \
+            --ks-type PKCS12 \
+            --ks-key-alias "$SPEECH_KEY_ALIAS" \
+            --ks-pass env:SPEECH_STORE_PASSWORD \
+            --key-pass env:SPEECH_KEY_PASSWORD \
+            --out "$OUTPUT" "$ALIGNED"
           "$APKSIGNER" verify --verbose "$OUTPUT"
 
       - name: Upload debug APK
@@ -79,7 +73,7 @@ jobs:
           path: speech-practice/app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload signed release APK
-        if: env.SPEECH_SIGNING_KEY_PEM != '' && env.SPEECH_SIGNING_CERT_PEM != ''
+        if: env.SPEECH_KEYSTORE_BASE64 != '' && env.SPEECH_STORE_PASSWORD != '' && env.SPEECH_KEY_PASSWORD != '' && env.SPEECH_KEY_ALIAS != ''
         uses: actions/upload-artifact@v4
         with:
           name: latihan-bicara-release-signed
