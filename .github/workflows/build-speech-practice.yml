@@ -7,6 +7,9 @@ on:
       - feature/latihan-bicara
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -44,8 +47,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/signing"
           printf '%s' "$SPEECH_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/signing/release.p12"
 
-          keytool -list -keystore "$RUNNER_TEMP/signing/release.p12" -storetype PKCS12 \
-            -storepass:env SPEECH_STORE_PASSWORD -alias "$SPEECH_KEY_ALIAS" >/dev/null
+          keytool -list -keystore "$RUNNER_TEMP/signing/release.p12" -storetype PKCS12             -storepass:env SPEECH_STORE_PASSWORD -alias "$SPEECH_KEY_ALIAS" >/dev/null
 
           BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
@@ -58,13 +60,7 @@ jobs:
           OUTPUT="speech-practice/app/build/outputs/apk/release/app-release.apk"
 
           "$ZIPALIGN" -f -p 4 "$INPUT" "$ALIGNED"
-          "$APKSIGNER" sign \
-            --ks "$RUNNER_TEMP/signing/release.p12" \
-            --ks-type PKCS12 \
-            --ks-key-alias "$SPEECH_KEY_ALIAS" \
-            --ks-pass env:SPEECH_STORE_PASSWORD \
-            --key-pass env:SPEECH_KEY_PASSWORD \
-            --out "$OUTPUT" "$ALIGNED"
+          "$APKSIGNER" sign             --ks "$RUNNER_TEMP/signing/release.p12"             --ks-type PKCS12             --ks-key-alias "$SPEECH_KEY_ALIAS"             --ks-pass env:SPEECH_STORE_PASSWORD             --key-pass env:SPEECH_KEY_PASSWORD             --out "$OUTPUT" "$ALIGNED"
           "$APKSIGNER" verify --verbose "$OUTPUT"
 
       - name: Upload debug APK
@@ -79,3 +75,13 @@ jobs:
         with:
           name: latihan-bicara-release-signed
           path: speech-practice/app/build/outputs/apk/release/app-release.apk
+
+      - name: Publish signed APK to GitHub Release
+        if: env.SPEECH_KEYSTORE_BASE64 != '' && env.SPEECH_STORE_PASSWORD != '' && env.SPEECH_KEY_PASSWORD != '' && env.SPEECH_KEY_ALIAS != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="latihan-bicara-latest"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG"             --title "Latihan Bicara APK"             --notes "Latest signed APK from feature/latihan-bicara."
+          gh release upload "$TAG"             "speech-practice/app/build/outputs/apk/release/app-release.apk#latihan-bicara-release.apk"             --clobber
