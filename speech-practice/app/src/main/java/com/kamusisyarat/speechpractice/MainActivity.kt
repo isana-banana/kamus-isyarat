@@ -49,9 +49,10 @@ class MainActivity : ComponentActivity() {
     private var recordingFile: java.io.File? = null
     private lateinit var referenceStore: AudioReferenceStore
     private var state by mutableStateOf(UiState())
+    private var pendingReferenceRecording = false
 
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        if (it) listen()
+        if (it) {\n            if (pendingReferenceRecording) {\n                pendingReferenceRecording = false\n                startReferenceRecording()\n            } else {\n                listen()\n            }\n        }
     }
 
     override fun onCreate(b: Bundle?) {
