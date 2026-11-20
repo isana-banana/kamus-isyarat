@@ -52,7 +52,14 @@ class MainActivity : ComponentActivity() {
     private var pendingReferenceRecording = false
 
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-        if (it) {\n            if (pendingReferenceRecording) {\n                pendingReferenceRecording = false\n                startReferenceRecording()\n            } else {\n                listen()\n            }\n        }
+        if (it) {
+            if (pendingReferenceRecording) {
+                pendingReferenceRecording = false
+                startReferenceRecording()
+            } else {
+                listen()
+            }
+        }
     }
 
     override fun onCreate(b: Bundle?) {
