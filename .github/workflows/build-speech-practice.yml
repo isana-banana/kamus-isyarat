@@ -33,8 +33,19 @@ jobs:
       - name: Prepare release signing
         if: env.SPEECH_KEYSTORE_BASE64 != ''
         run: |
+          set -euo pipefail
           mkdir -p "$RUNNER_TEMP/signing"
-          printf '%s' "$SPEECH_KEYSTORE_BASE64" | tr -d '\r\n\t ' | base64 --decode > "$RUNNER_TEMP/signing/speech-practice-release.jks"
+          normalized="$(printf '%s' "$SPEECH_KEYSTORE_BASE64" | tr -d '[:space:]' | tr '_-' '/+')"
+          remainder=$((#{#normalized} % 4))
+          if [ "$remainder" -eq 2 ]; then normalized="${normalized}=="; fi
+          if [ "$remainder" -eq 3 ]; then normalized="${normalized}="; fi
+          printf '%s' "$normalized" | base64 --decode --ignore-garbage > "$RUNNER_TEMP/signing/speech-practice-release.jks"
+          if ! keytool -list -keystore "$RUNNER_TEMP/signing/speech-practice-release.jks" -storepass "$SPEECH_KEYSTORE_PASSWORD" >/dev/null 2>&1; then
+            echo "::error::SPEECH_KEYSTORE_BASE64 berhasil didecode tetapi file keystore tidak valid, atau SPEECH_KEYSTORE_PASSWORD salah."
+            exit 1
+          fi
+        env:
+          SPEECH_KEYSTORE_PASSWORD: ${{ secrets.SPEECH_KEYSTORE_PASSWORD }}
 
       - name: Build signed release APK
         if: env.SPEECH_KEYSTORE_BASE64 != ''
