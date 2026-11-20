@@ -54,6 +54,9 @@ jobs:
             exit 1
           fi
 
+          # apksigner requires an unencrypted PKCS#8 private key.
+          openssl pkcs8 -topk8 -nocrypt -in "$RUNNER_TEMP/signing/key.pem" -out "$RUNNER_TEMP/signing/key-pkcs8.pem"
+
           BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
           ZIPALIGN="$BUILD_TOOLS_DIR/zipalign"
           APKSIGNER="$BUILD_TOOLS_DIR/apksigner"
@@ -66,7 +69,7 @@ jobs:
           OUTPUT="speech-practice/app/build/outputs/apk/release/app-release.apk"
 
           "$ZIPALIGN" -f -p 4 "$INPUT" "$ALIGNED"
-          "$APKSIGNER" sign --key "$RUNNER_TEMP/signing/key.pem" --cert "$RUNNER_TEMP/signing/cert.pem" --out "$OUTPUT" "$ALIGNED"
+          "$APKSIGNER" sign --key "$RUNNER_TEMP/signing/key-pkcs8.pem" --cert "$RUNNER_TEMP/signing/cert.pem" --out "$OUTPUT" "$ALIGNED"
           "$APKSIGNER" verify --verbose "$OUTPUT"
 
       - name: Upload debug APK
