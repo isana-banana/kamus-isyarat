@@ -375,7 +375,23 @@ private fun Screen(
                 Spacer(Modifier.height(4.dp))
                 Text(if (s.result.isBlank()) "—" else "“${s.result}”", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(14.dp))
-                Text(if (s.confidence == null) "—" else "${s.confidence}%", style = MaterialTheme.typography.displaySmall, color = confidenceColor, fontWeight = FontWeight.Bold)
+                if (s.mode == Mode.PRACTICE) {
+                    val scoreColor = when {
+                        s.score == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                        s.score >= 80 -> Color(0xFF2E7D32)
+                        s.score >= 50 -> Color(0xFFF9A825)
+                        else -> Color(0xFFC62828)
+                    }
+                    Text(
+                        if (s.score == null) "—" else "${s.score}%",
+                        style = MaterialTheme.typography.displaySmall,
+                        color = scoreColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text("Nilai kesesuaian ucapan", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(if (s.confidence == null) "—" else "${s.confidence}%", style = MaterialTheme.typography.titleLarge, color = confidenceColor, fontWeight = FontWeight.Bold)
                 Text("Keyakinan mesin mengenali ucapan", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
