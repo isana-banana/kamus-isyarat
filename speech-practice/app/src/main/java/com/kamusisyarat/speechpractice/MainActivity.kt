@@ -273,7 +273,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Mode { PRACTICE, FREE }
+private enum class Mode { PRACTICE, FREE, SAMPLE }
 
 private data class UiState(
     val mode: Mode = Mode.PRACTICE,
@@ -284,7 +284,8 @@ private data class UiState(
     val status: String = "Siap",
     val listening: Boolean = false,
     val recordingReference: Boolean = false,
-    val references: List<AudioReference> = emptyList()
+    val references: List<AudioReference> = emptyList(),
+    val selectedReferenceId: String? = null
 )
 
 @Composable
@@ -313,6 +314,7 @@ private fun Screen(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             FilterChip(s.mode == Mode.PRACTICE, { onMode(Mode.PRACTICE) }, label = { Text("Latihan") })
             FilterChip(s.mode == Mode.FREE, { onMode(Mode.FREE) }, label = { Text("Bebas") })
+            FilterChip(s.mode == Mode.SAMPLE, { onMode(Mode.SAMPLE) }, label = { Text("Dengan Sample") })
         }
         Spacer(Modifier.height(14.dp))
 
@@ -334,7 +336,7 @@ private fun Screen(
                 Column(Modifier.padding(14.dp)) {
                     Text("Contoh suara", fontWeight = FontWeight.Bold)
                     Text(
-                        "Guru/orang tua dapat merekam beberapa contoh. Anak menirukan suara ini.",
+                        "Guru/orang tua merekam ucapan acuan. Sample dipakai untuk menilai ketepatan ucapan anak; tidak diputar otomatis saat latihan.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -370,8 +372,8 @@ private fun Screen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
             Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(if (s.mode == Mode.PRACTICE) "Target ucapan" else "Ucapan bebas", style = MaterialTheme.typography.titleMedium)
-                if (s.mode == Mode.PRACTICE) {
+                Text(if (s.mode == Mode.FREE) "Ucapan bebas" else "Target ucapan", style = MaterialTheme.typography.titleMedium)
+                if (s.mode == Mode.PRACTICE || s.mode == Mode.SAMPLE) {
                     Spacer(Modifier.height(5.dp))
                     Text(s.target.ifBlank { "—" }, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
                 }
@@ -380,7 +382,7 @@ private fun Screen(
                 Spacer(Modifier.height(4.dp))
                 Text(if (s.result.isBlank()) "—" else "“${s.result}”", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(14.dp))
-                if (s.mode == Mode.PRACTICE) {
+                if (s.mode == Mode.PRACTICE || s.mode == Mode.SAMPLE) {
                     val scoreColor = when {
                         s.score == null -> MaterialTheme.colorScheme.onSurfaceVariant
                         s.score >= 80 -> Color(0xFF2E7D32)
@@ -393,7 +395,7 @@ private fun Screen(
                         color = scoreColor,
                         fontWeight = FontWeight.Bold
                     )
-                    Text("Nilai kesesuaian ucapan", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (s.mode == Mode.SAMPLE) "Kesesuaian dengan sample + STT" else "Nilai kesesuaian ucapan", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                 }
                 Text(if (s.confidence == null) "—" else "${s.confidence}%", style = MaterialTheme.typography.titleLarge, color = confidenceColor, fontWeight = FontWeight.Bold)
