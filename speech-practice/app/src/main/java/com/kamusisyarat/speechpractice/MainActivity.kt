@@ -68,7 +68,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
         referenceStore = AudioReferenceStore(this)
-        state = state.copy(references = referenceStore.list(state.target))
+        val initialReferences = referenceStore.list(state.target)
+        state = state.copy(references = initialReferences, selectedReferenceId = initialReferences.firstOrNull()?.id)
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -79,6 +80,7 @@ class MainActivity : ComponentActivity() {
                             state = state.copy(
                                 target = target,
                                 references = referenceStore.list(target),
+                                selectedReferenceId = referenceStore.list(target).firstOrNull()?.id,
                                 result = "",
                                 confidence = null,
                                 score = null
@@ -87,7 +89,8 @@ class MainActivity : ComponentActivity() {
                         ::requestAudio,
                         ::toggleReferenceRecording,
                         ::playReference,
-                        ::deleteReference
+                        ::deleteReference,
+                        { ref -> state = state.copy(selectedReferenceId = ref.id) }
                     )
                 }
             }
@@ -162,6 +165,7 @@ class MainActivity : ComponentActivity() {
             referenceStore.add(state.target, file.name)
             state = state.copy(
                 references = referenceStore.list(state.target),
+                selectedReferenceId = referenceStore.list(state.target).lastOrNull()?.id,
                 recordingReference = false,
                 status = "Contoh suara tersimpan"
             )
@@ -353,7 +357,8 @@ private fun Screen(
     onListen: () -> Unit,
     onRecordReference: () -> Unit,
     onPlayReference: (AudioReference) -> Unit,
-    onDeleteReference: (AudioReference) -> Unit
+    onDeleteReference: (AudioReference) -> Unit,
+    onSelectReference: (AudioReference) -> Unit
 ) {
     val confidenceColor = when {
         s.confidence == null -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -409,8 +414,11 @@ private fun Screen(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            OutlinedButton(onClick = { onPlayReference(ref) }, modifier = Modifier.weight(1f)) {
-                                Text("▶ ${ref.label}")
+                            OutlinedButton(onClick = { onSelectReference(ref) }, modifier = Modifier.weight(1f)) {
+                                Text(if (s.selectedReferenceId == ref.id) "✓ ${ref.label}" else ref.label)
+                            }
+                            OutlinedButton(onClick = { onPlayReference(ref) }) {
+                                Text("▶")
                             }
                             OutlinedButton(onClick = { onDeleteReference(ref) }) {
                                 Text("Hapus")
