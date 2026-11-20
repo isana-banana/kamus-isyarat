@@ -3,6 +3,8 @@ package com.kamusisyarat.speechpractice
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
@@ -25,6 +27,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -41,21 +44,38 @@ import kotlin.math.roundToInt
 
 class MainActivity : ComponentActivity() {
     private var recognizer: SpeechRecognizer? = null
+    private var mediaRecorder: MediaRecorder? = null
+    private var mediaPlayer: MediaPlayer? = null
+    private var recordingFile: java.io.File? = null
+    private lateinit var referenceStore: AudioReferenceStore
     private var state by mutableStateOf(UiState())
+
     private val permission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
         if (it) listen()
     }
 
     override fun onCreate(b: Bundle?) {
         super.onCreate(b)
+        referenceStore = AudioReferenceStore(this)
+        state = state.copy(references = referenceStore.list(state.target))
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     Screen(
                         state,
-                        { state = state.copy(mode = it, result = "", confidence = null, status = "Siap") },
-                        { state = state.copy(target = it) },
-                        ::requestAudio
+                        { mode -> state = state.copy(mode = mode, result = "", confidence = null, status = "Siap") },
+                        { target ->
+                            state = state.copy(
+                                target = target,
+                                references = referenceStore.list(target),
+                                result = "",
+                                confidence = null
+                            )
+                        },
+                        ::requestAudio,
+                        ::toggleReferenceRecording,
+                        ::playReference,
+                        ::deleteReference
                     )
                 }
             }
@@ -70,6 +90,101 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun toggleReferenceRecording() {
+        if (state.recordingReference) stopReferenceRecording() else startReferenceRecording()
+    }
+
+    private fun startReferenceRecording() {
+        if (state.target.isBlank()) {
+            state = state.copy(status = "Isi target terlebih dahulu")
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            permission.launch(Manifest.permission.RECORD_AUDIO)
+            state = state.copy(status = "Izinkan mikrofon, lalu tekan Tambah contoh lagi")
+            return
+        }
+
+        try {
+            recognizer?.destroy()
+            recognizer = null
+            val file = referenceStore.createFile()
+            val recorder = MediaRecorder()
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioSamplingRate(44100)
+            recorder.setAudioEncodingBitRate(128000)
+            recorder.setOutputFile(file.absolutePath)
+            recorder.prepare()
+            recorder.start()
+            mediaRecorder = recorder
+            recordingFile = file
+            state = state.copy(
+                recordingReference = true,
+                listening = false,
+                status = "Merekam contoh: ${state.target}"
+            )
+        } catch (e: Exception) {
+            recordingFile?.delete()
+            recordingFile = null
+            mediaRecorder?.release()
+            mediaRecorder = null
+            state = state.copy(status = "Gagal memulai rekaman")
+        }
+    }
+
+    private fun stopReferenceRecording() {
+        val file = recordingFile
+        try {
+            mediaRecorder?.stop()
+        } catch (_: Exception) {
+            file?.delete()
+        } finally {
+            mediaRecorder?.release()
+            mediaRecorder = null
+            recordingFile = null
+        }
+
+        if (file != null && file.exists() && file.length() > 1000) {
+            referenceStore.add(state.target, file.name)
+            state = state.copy(
+                references = referenceStore.list(state.target),
+                recordingReference = false,
+                status = "Contoh suara tersimpan"
+            )
+        } else {
+            file?.delete()
+            state = state.copy(recordingReference = false, status = "Rekaman terlalu pendek")
+        }
+    }
+
+    private fun playReference(ref: AudioReference) {
+        try {
+            mediaPlayer?.release()
+            mediaPlayer = MediaPlayer().apply {
+                setDataSource(referenceStore.file(ref).absolutePath)
+                prepare()
+                setOnCompletionListener { release(); mediaPlayer = null }
+                start()
+            }
+            state = state.copy(status = "Memutar ${ref.label}")
+        } catch (_: Exception) {
+            state = state.copy(status = "Audio tidak dapat diputar")
+        }
+    }
+
+    private fun deleteReference(ref: AudioReference) {
+        mediaPlayer?.release()
+        mediaPlayer = null
+        referenceStore.file(ref).delete()
+        referenceStore.delete(state.target, ref.id)
+        state = state.copy(
+            references = referenceStore.list(state.target),
+            status = "${ref.label} dihapus"
+        )
+    }
+
     private fun listen() {
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
@@ -77,26 +192,13 @@ class MainActivity : ComponentActivity() {
                 override fun onReadyForSpeech(p: Bundle?) {
                     state = state.copy(status = "Mendengarkan…", listening = true)
                 }
-
-                override fun onBeginningOfSpeech() {
-                    state = state.copy(status = "Mendeteksi suara…")
-                }
-
-                override fun onEndOfSpeech() {
-                    state = state.copy(status = "Memproses…")
-                }
-
-                override fun onError(e: Int) {
-                    state = state.copy(status = err(e), listening = false, confidence = null)
-                }
-
+                override fun onBeginningOfSpeech() { state = state.copy(status = "Mendeteksi suara…") }
+                override fun onEndOfSpeech() { state = state.copy(status = "Memproses…") }
+                override fun onError(e: Int) { state = state.copy(status = err(e), listening = false, confidence = null) }
                 override fun onResults(b: Bundle?) {
-                    val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull().orEmpty()
-                    val raw = b?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
-                        ?.firstOrNull()
+                    val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
+                    val raw = b?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)?.firstOrNull()
                     val confidence = raw?.takeIf { it in 0f..1f }?.times(100f)?.roundToInt()
-
                     state = state.copy(
                         result = t,
                         confidence = confidence,
@@ -104,13 +206,10 @@ class MainActivity : ComponentActivity() {
                         listening = false
                     )
                 }
-
                 override fun onPartialResults(b: Bundle?) {
-                    val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                        ?.firstOrNull().orEmpty()
+                    val t = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
                     if (t.isNotBlank()) state = state.copy(result = t)
                 }
-
                 override fun onRmsChanged(v: Float) {}
                 override fun onBufferReceived(b: ByteArray?) {}
                 override fun onEvent(t: Int, b: Bundle?) {}
@@ -123,7 +222,6 @@ class MainActivity : ComponentActivity() {
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         }
-
         state = state.copy(listening = true, result = "", confidence = null, status = "Memulai…")
         recognizer?.startListening(i)
     }
@@ -139,6 +237,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         recognizer?.destroy()
+        mediaRecorder?.release()
+        mediaPlayer?.release()
         super.onDestroy()
     }
 }
@@ -151,7 +251,9 @@ private data class UiState(
     val result: String = "",
     val confidence: Int? = null,
     val status: String = "Siap",
-    val listening: Boolean = false
+    val listening: Boolean = false,
+    val recordingReference: Boolean = false,
+    val references: List<AudioReference> = emptyList()
 )
 
 @Composable
@@ -159,7 +261,10 @@ private fun Screen(
     s: UiState,
     onMode: (Mode) -> Unit,
     onTarget: (String) -> Unit,
-    onListen: () -> Unit
+    onListen: () -> Unit,
+    onRecordReference: () -> Unit,
+    onPlayReference: (AudioReference) -> Unit,
+    onDeleteReference: (AudioReference) -> Unit
 ) {
     val confidenceColor = when {
         s.confidence == null -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -173,22 +278,12 @@ private fun Screen(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Latihan Bicara", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(14.dp))
-
+        Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            FilterChip(
-                selected = s.mode == Mode.PRACTICE,
-                onClick = { onMode(Mode.PRACTICE) },
-                label = { Text("Latihan") }
-            )
-            FilterChip(
-                selected = s.mode == Mode.FREE,
-                onClick = { onMode(Mode.FREE) },
-                label = { Text("Bebas") }
-            )
+            FilterChip(s.mode == Mode.PRACTICE, { onMode(Mode.PRACTICE) }, label = { Text("Latihan") })
+            FilterChip(s.mode == Mode.FREE, { onMode(Mode.FREE) }, label = { Text("Bebas") })
         }
-
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(14.dp))
 
         if (s.mode == Mode.PRACTICE) {
             OutlinedTextField(
@@ -198,7 +293,42 @@ private fun Screen(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text("Contoh suara", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Guru/orang tua dapat merekam beberapa contoh. Anak menirukan suara ini.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = onRecordReference, modifier = Modifier.fillMaxWidth()) {
+                        Text(if (s.recordingReference) "⏹ Selesai & simpan contoh" else "🎙 Tambah contoh audio")
+                    }
+
+                    s.references.forEach { ref ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedButton(onClick = { onPlayReference(ref) }, modifier = Modifier.weight(1f)) {
+                                Text("▶ ${ref.label}")
+                            }
+                            OutlinedButton(onClick = { onDeleteReference(ref) }) {
+                                Text("Hapus")
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
         }
 
         Card(
@@ -206,66 +336,32 @@ private fun Screen(
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    if (s.mode == Mode.PRACTICE) "Target ucapan" else "Ucapan bebas",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
+            Column(Modifier.padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(if (s.mode == Mode.PRACTICE) "Target ucapan" else "Ucapan bebas", style = MaterialTheme.typography.titleMedium)
                 if (s.mode == Mode.PRACTICE) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        s.target.ifBlank { "—" },
-                        style = MaterialTheme.typography.displaySmall,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Spacer(Modifier.height(5.dp))
+                    Text(s.target.ifBlank { "—" }, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Bold)
                 }
-
-                Spacer(Modifier.height(22.dp))
-                Text(
-                    "Hasil yang didengar",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Spacer(Modifier.height(5.dp))
-                Text(
-                    if (s.result.isBlank()) "—" else "“" + s.result + "”",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    if (s.confidence == null) "—" else s.confidence.toString() + "%",
-                    style = MaterialTheme.typography.displaySmall,
-                    color = confidenceColor,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Keyakinan mesin mengenali ucapan",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Spacer(Modifier.height(18.dp))
+                Text("Hasil yang didengar", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(4.dp))
+                Text(if (s.result.isBlank()) "—" else "“${s.result}”", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(14.dp))
+                Text(if (s.confidence == null) "—" else "${s.confidence}%", style = MaterialTheme.typography.displaySmall, color = confidenceColor, fontWeight = FontWeight.Bold)
+                Text("Keyakinan mesin mengenali ucapan", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(16.dp))
         Button(
             onClick = onListen,
-            enabled = !s.listening,
+            enabled = !s.listening && !s.recordingReference,
             modifier = Modifier.size(width = 190.dp, height = 58.dp),
             shape = RoundedCornerShape(30.dp)
         ) {
-            Text(
-                if (s.listening) "Mendengarkan…" else "🎤  Mulai",
-                style = MaterialTheme.typography.titleMedium
-            )
+            Text(if (s.listening) "Mendengarkan…" else "🎤  Mulai", style = MaterialTheme.typography.titleMedium)
         }
-
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(10.dp))
         Text(s.status, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
