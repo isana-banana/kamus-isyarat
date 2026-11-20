@@ -1,4 +1,5 @@
 name: Build Latihan Bicara APK
+# Trigger build from repository push
 
 on:
   push:
