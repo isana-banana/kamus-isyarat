@@ -197,7 +197,53 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    private fun selectedReference(): AudioReference? =
+        state.references.firstOrNull { it.id == state.selectedReferenceId }
+
+    private fun startChildRecording(): Boolean {
+        if (selectedReference() == null) return false
+        try {
+            mediaRecorder?.release()
+            val file = java.io.File(filesDir, "child_" + System.currentTimeMillis() + ".m4a")
+            val recorder = MediaRecorder()
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioSamplingRate(44100)
+            recorder.setAudioEncodingBitRate(128000)
+            recorder.setOutputFile(file.absolutePath)
+            recorder.prepare()
+            recorder.start()
+            mediaRecorder = recorder
+            recordingFile = file
+            return true
+        } catch (_: Exception) {
+            mediaRecorder?.release()
+            mediaRecorder = null
+            recordingFile = null
+            return false
+        }
+    }
+
+    private fun stopChildRecording(): java.io.File? {
+        val file = recordingFile
+        try { mediaRecorder?.stop() } catch (_: Exception) { file?.delete() }
+        mediaRecorder?.release()
+        mediaRecorder = null
+        recordingFile = null
+        return file?.takeIf { it.exists() && it.length() > 1000 }
+    }
+
     private fun listen() {
+        if (state.mode == Mode.SAMPLE && selectedReference() == null) {
+            state = state.copy(status = "Pilih sample acuan terlebih dahulu")
+            return
+        }
+        val sampleMode = state.mode == Mode.SAMPLE
+        if (sampleMode && !startChildRecording()) {
+            state = state.copy(status = "Gagal merekam ucapan anak")
+            return
+        }
         recognizer?.destroy()
         recognizer = SpeechRecognizer.createSpeechRecognizer(this).also { sr ->
             sr.setRecognitionListener(object : RecognitionListener {
@@ -207,6 +253,7 @@ class MainActivity : ComponentActivity() {
                 override fun onBeginningOfSpeech() { state = state.copy(status = "Mendeteksi suara…") }
                 override fun onEndOfSpeech() { state = state.copy(status = "Memproses…") }
                 override fun onError(e: Int) {
+                    if (sampleMode) stopChildRecording()?.delete()
                     state = state.copy(status = err(e), listening = false, confidence = null,
                         score = if (state.mode == Mode.PRACTICE) 0 else null)
                 }
@@ -215,20 +262,30 @@ class MainActivity : ComponentActivity() {
                     val t = results.firstOrNull().orEmpty()
                     val raw = b?.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)?.firstOrNull()
                     val confidence = raw?.takeIf { it in 0f..1f }?.times(100f)?.roundToInt()
-                    val score = if (state.mode == Mode.PRACTICE) {
+                    val textScore = if (state.mode == Mode.PRACTICE || state.mode == Mode.SAMPLE) {
                         results.maxOfOrNull { Similarity.score(state.target, it) } ?: 0
                     } else null
+                    val acousticScore = if (sampleMode) {
+                        val child = stopChildRecording()
+                        val ref = selectedReference()
+                        if (child != null && ref != null) {
+                            AudioSimilarity.score(referenceStore.file(ref), child)
+                        } else 0
+                    } else null
+                    val score = if (state.mode == Mode.SAMPLE) {
+                        ((acousticScore ?: 0) * 0.7 + (textScore ?: 0) * 0.3).roundToInt()
+                    } else textScore
                     state = state.copy(result = t, confidence = confidence, score = score,
                         status = if (t.isBlank()) {
                             if (state.mode == Mode.PRACTICE) "Tidak dikenali — nilai 0%" else "Suara tidak membentuk kata"
-                        } else if (state.mode == Mode.PRACTICE) scoreLabel(score ?: 0) else "Selesai",
+                        } else if (state.mode == Mode.PRACTICE || state.mode == Mode.SAMPLE) scoreLabel(score ?: 0) else "Selesai",
                         listening = false)
                 }
                 override fun onPartialResults(b: Bundle?) {
                     val results = b?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
                     val t = results.firstOrNull().orEmpty()
                     if (t.isNotBlank()) {
-                        val score = if (state.mode == Mode.PRACTICE)
+                        val score = if (state.mode == Mode.PRACTICE || state.mode == Mode.SAMPLE)
                             results.maxOfOrNull { Similarity.score(state.target, it) } ?: 0 else null
                         state = state.copy(result = t, score = score,
                             status = if (state.mode == Mode.PRACTICE) scoreLabel(score ?: 0) else "Mendengar…")
